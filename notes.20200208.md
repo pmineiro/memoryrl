@@ -33,5 +33,6 @@ We can't directly use CMT in the contextual bandit product platform at the momen
     * self-consistency requires the update reward is maximized when retrieving (k, v) in response to k.
   * Could use (x, a) pairs as keys (qua [Model-Free Episodic Control](https://arxiv.org/abs/1606.04460)) and observed reward as stored value.
     * is there an update reward such that this is compatible with self-consistency?
+    * can we update an estimate of the conditional mean reward in the stored value (that is sensible when (x, a) never exactly repeats)?
   
 ## Combining with a more standard model
