@@ -46,7 +46,7 @@ Intuitively we'd like to combine the two approaches to get "the best of both wor
 
 ### Memory as augmented input to a parametric model
 
-This is a frequent design pattern in the literature, e.g., [Neural Episodic Control](https://arxiv.org/abs/1703.01988) and [Memory Augmented Neural Machine Translation](https://arxiv.org/abs/1708.02005).  
+This is a frequent design pattern in the literature, e.g., [Memory Augmented Neural Machine Translation](https://arxiv.org/abs/1708.02005).  
 
 Basically the memory system returns z in response to input x and then the parametric system gets combo input (x, z).
 
