@@ -48,4 +48,15 @@ Intuitively we'd like to combine the two approaches to get "the best of both wor
 
 This is a frequent design pattern in the literature, e.g., [Neural Episodic Control](https://arxiv.org/abs/1703.01988) and [Memory Augmented Neural Machine Translation](https://arxiv.org/abs/1708.02005).  
 
+Basically the memory system returns z in response to input x and then the parametric system gets combo input (x, z).
+
+```
+   -----------------
+   | Memory System | - z
+   -----------------    \
+  /                      \          --------------------
+x ---------------------- (x, z) -- | Parametric Model |
+                                    --------------------
+```
+
 An apparent disadvantage is that by routing the memory system through the parametric model, slow reaction to new information is guaranteed.  Ideally the ability of the memory to "react quickly" to new information would be preserved (when appropriate).
