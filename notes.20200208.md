@@ -60,3 +60,5 @@ x ---------------------- (x, z) -- | Parametric Model |
 ```
 
 An apparent disadvantage is that by routing the memory system through the parametric model, slow reaction to new information is guaranteed.  Ideally the ability of the memory to "react quickly" to new information would be preserved (when appropriate).
+
+An advantage of this approach is that we compete with the parameteric model unassisted by memory.
