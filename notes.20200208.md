@@ -35,4 +35,17 @@ We can't directly use CMT in the contextual bandit product platform at the momen
     * is there an update reward such that this is compatible with self-consistency?
     * can we update an estimate of the conditional mean reward in the stored value (that is sensible when (x, a) never exactly repeats)?
   
-## Combining with a more standard model
+## Combining with a more standard "parametric" model
+
+Memory apparently has different strengths and weaknesses than parametric models.
+  * Optimization: as discussed above, memory reacts faster than traditional online learning.
+     * Question: in "off-policy" mode with perfect optimization, is there still a difference?
+  * Inductive biases: memory leverages self-consistency, while parametric leverages model class.
+     * Question: with powerful model classes like neural networks, is there still a difference?
+Intuitively we'd like to combine the two approaches to get "the best of both worlds".
+
+### Memory as augmented input to a parametric model
+
+This is a frequent design pattern in the literature, e.g., [Neural Episodic Control](https://arxiv.org/abs/1703.01988) and [Memory Augmented Neural Machine Translation](https://arxiv.org/abs/1708.02005).  
+
+An apparent disadvantage is that by routing the memory system through the parametric model, slow reaction to new information is guaranteed.  Ideally the ability of the memory to "react quickly" to new information would be preserved (when appropriate).
