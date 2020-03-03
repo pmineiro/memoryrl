@@ -44,6 +44,8 @@ Memory apparently has different strengths and weaknesses than parametric models.
      * Question: with powerful model classes like neural networks, is there still a difference?
 Intuitively we'd like to combine the two approaches to get "the best of both worlds".
 
+In all cases we want the reward fed to update function must be compatible with self-consistency.  The sketches below don't specify exactly how the memory inserts and updates are done.
+
 ### Memory as augmented input to a parametric model
 
 This is a frequent design pattern in the literature, e.g., [Memory Augmented Neural Machine Translation](https://arxiv.org/abs/1708.02005).  
@@ -62,3 +64,20 @@ x ---------------------- (x, z) -- | Parametric Model |
 An apparent disadvantage is that by routing the memory system through the parametric model, slow reaction to new information is guaranteed.  Ideally the ability of the memory to "react quickly" to new information would be preserved (when appropriate).
 
 An advantage of this approach is that we compete with the parameteric model unassisted by memory.
+
+### Memory as residual learning relative to a parametric model
+
+This is an idea from Alekh.  The memory system tries to correct a parametric system (or vice versa).
+
+```
+   -----------------
+   | Memory System | ---- z
+   -----------------       \
+  /                         \          
+x \                         [+] -> output = y + z
+   --------------------    /
+   | Parametric Model | - y
+   --------------------
+ ```
+ 
+ An advantage is this architecture preserves the "reacts quickly" property of the memory.
