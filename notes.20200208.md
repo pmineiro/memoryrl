@@ -81,3 +81,22 @@ x \                         [+] -> output = y + z
  ```
  
  An advantage is this architecture preserves the "reacts quickly" property of the memory.
+
+### Memorized attention
+
+This is an elaboration of the residual learning idea, where we try to figure out which parts of the space the "memory is good at" and which parts of the space the "model is good at".  We could use a parametric attention mechanism over the subsystems to do that, but then we would not be "reacting quickly".  So instead we use a memorized attention mechanism, which is another memory but this time it stores a scalar which says how to mix between the other memory and the parametric model.
+
+```
+   --------------------
+   | Attention Memory | ---- a
+ / --------------------      |
+/                            |
+|  -----------------         |
+|  | Memory System | ---- z  |
+|  -----------------       \ |
+| /                         \|          
+x \                         [+] -> output = a y + (1 - a) z
+   --------------------    /
+   | Parametric Model | - y
+   --------------------
+ ```
