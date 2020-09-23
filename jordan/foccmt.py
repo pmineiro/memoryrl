@@ -1,7 +1,7 @@
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--max', type=int, default=1000)
-parser.add_argument('--pruneStrat', type=str, default='')
+parser.add_argument('--pruneStrat', type=str, default='', help='rand, old, or ci')
 args = parser.parse_args()
 
 class FOC:
@@ -164,16 +164,10 @@ class FOC:
         #randomState.seed(45)
         #torch.manual_seed(2112)
 
-  
-        #print(args.pruneStrat)
-        #print('{:8.8s}\t{:8.8s}\t{:10.10s}\t{:10.10s}'.format(
-        #    'n', 'emp loss', 'since last', 'last pred')
-        #)
 
-
-
+        # run 5 experiments, each querying 10k samples
         for pno in range(5):
-            print('new', flush=True)
+            print('----------------', flush=True)
             loss = FOC.EasyAcc()
             sincelast = FOC.EasyAcc()
             cmt = CMT(routerFactory=routerFactory, scorer=scorer, alpha=0.25, c=10, d=1, randomState=randomState,
