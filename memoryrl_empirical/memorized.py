@@ -9,6 +9,8 @@ import torch
 from sklearn.exceptions import NotFittedError 
 from sklearn import linear_model
 
+from coba.preprocessing import OneHotEncoder
+
 class CMT:
     class Node:
         def __init__(self, parent, left=None, right=None, g=None):
@@ -282,7 +284,7 @@ class CMT:
         for k in self.leafbykey.keys():
             assert k in self.leafbykey[k].memories
 
-class MemorizedLearner:
+class MemorizedLearner_1:
 
     class LinearModel:
         def __init__(self, *args, **kwargs):
@@ -295,7 +297,7 @@ class MemorizedLearner:
                 return 0
         
         def update(self, x, y, w):
-            self.model.partial_fit(X=[MemorizedLearner.flat(x)], y=[y], sample_weight=[w])
+            self.model.partial_fit(X=[x], y=[y], sample_weight=[w])
             
     class NormalizedLinearProduct:
         def predict(self, x, z):
@@ -311,8 +313,167 @@ class MemorizedLearner:
 
     def __init__(self, epsilon: float, max_memories: int = 1000) -> None:
 
-        routerFactory = lambda: MemorizedLearner.LinearModel()
-        scorer        = MemorizedLearner.NormalizedLinearProduct()
+        routerFactory = lambda: MemorizedLearner_1.LinearModel()
+        scorer        = MemorizedLearner_1.NormalizedLinearProduct()
+        randomState   = random.Random(45)
+
+        self._one_hot_encoder = OneHotEncoder()
+
+        self._epsilon      = epsilon
+        self._mem          = CMT(routerFactory, scorer, alpha=0.25, c=10, d=1, randomState=randomState, maxMemories=max_memories)
+        self._update       = {}
+        self._max_memories = max_memories
+
+    @property
+    def family(self) -> str:
+        return "CMT_1"
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return {'e':self._epsilon, 'm': self._max_memories}
+
+    def choose(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> int:
+        """Choose which action index to take."""
+
+        if not self._one_hot_encoder.is_fit:
+            self._one_hot_encoder = self._one_hot_encoder.fit(actions)
+
+        if random.random() < self._epsilon:
+            return random.randint(0,len(actions)-1)
+        else:
+            (greedy_r, greedy_a) = -math.inf, actions[0]
+
+            for action in actions:
+                x = self.flat(context,action)
+                (_, z) = self._mem.query(x, 1, 0)
+                if len(z) > 0 and z[0][1] > greedy_r:
+                    (greedy_r, greedy_a) = (z[0][1], action)
+
+            return actions.index(greedy_a)
+
+    def learn(self, key: int, context: Hashable, action: Hashable, reward: float) -> None:
+        """Learn about the result of an action that was taken in a context."""
+        
+        x = self.flat(context,action)
+
+        #this reduces dependencies and simplifies code
+        #but requires an extra query. If performance is
+        #a problem we could use the `key` param to store
+        #the result of this query in `choose` to use here
+        (u,z) = self._mem.query(x, k=1, epsilon=1)
+
+        if len(z) > 0:
+            self._mem.update(u, x, z, -(z[0][1]-reward)**2)
+
+        self._mem.insert(x, reward)
+
+    def flat(self, context,action):
+
+        if not isinstance(context,tuple): context = (context,)
+        if not isinstance(action ,tuple): action  = (action,)
+
+        one_hot_action = tuple(self._one_hot_encoder.encode([action[0]])[0])
+
+        return context + one_hot_action + tuple(np.reshape(np.outer(context, one_hot_action),-1))
+
+class MemorizedLearner_2:
+
+    class LogisticRegressor(torch.nn.Module):        
+        def __init__(self, input_dim, output_dim, eta0):
+            
+            super(MemorizedLearner_2.LogisticRegressor, self).__init__()
+            self.linear = torch.nn.Linear(input_dim, output_dim)
+            self.loss = torch.nn.CrossEntropyLoss()
+            self.optimizer = torch.optim.Adam(self.linear.parameters(), lr=eta0)
+            self.eta0 = eta0
+            self.n = 0
+            
+        def forward(self, X):
+
+            return self.linear(torch.autograd.Variable(torch.from_numpy(X)))
+        
+        def predict(self, X):            
+            return torch.argmax(self.forward(X), dim=1).numpy()
+        
+        def set_lr(self):
+            from math import sqrt
+            lr = self.eta0 / sqrt(self.n)
+            for g in self.optimizer.param_groups:
+                g['lr'] = lr
+
+        def partial_fit(self, X, y, sample_weight=None, **kwargs):
+            self.optimizer.zero_grad()
+            yhat = self.forward(X)
+            if sample_weight is None:
+                loss = self.loss(yhat, torch.from_numpy(y))
+            else:
+                loss = torch.from_numpy(sample_weight) * self.loss(yhat, torch.from_numpy(y))
+            loss.backward()
+            self.n += X.shape[0]
+            self.set_lr()
+            self.optimizer.step() 
+
+    class LogisticModel:
+        def __init__(self, *args, **kwargs):
+            kwargs['output_dim'] = 2
+            self.model = MemorizedLearner_2.LogisticRegressor(*args, **kwargs)
+            
+        def predict(self, x):
+            import numpy as np
+            
+            F = self.model.forward(X=np.array([x], dtype='float32')).detach().numpy()
+            dF = F[:,1] - F[:,0]
+            return -1 + 2 * dF          
+        
+        def update(self, x, y, w):
+            import numpy as np
+            
+            assert y == 1 or y == -1
+            
+            self.model.partial_fit(X=np.array([x], dtype='float32'), 
+                                   y=(1 + np.array([y], dtype='int')) // 2, 
+                                   sample_weight=np.array([w], dtype='float32'),
+                                   classes=(0, 1))
+
+    class LearnedEuclideanDistance:
+        def __init__(self, *args, **kwargs):
+            kwargs['output_dim'] = 2
+            self.model = MemorizedLearner_2.LogisticRegressor(*args, **kwargs)
+            self.model.linear.weight.data[0,:].fill_(0.01 / kwargs['input_dim'])
+            self.model.linear.weight.data[1,:].fill_(-0.01 / kwargs['input_dim'])
+            self.model.linear.bias.data.fill_(0.0)
+            self.model.linear.bias.requires_grad = False
+        
+        def predict(self, x, z):
+            import numpy as np
+            
+            (xprime, omegaprime) = z
+            
+            dx = np.array([x], dtype='float32')
+            dx -= [xprime]
+            dx *= dx
+            
+            F = self.model.forward(dx).detach().numpy()
+            dist = F[0,1] - F[0,0]
+            return dist
+        
+        def update(self, x, z, r):
+            import numpy as np
+            
+            if r == 1 and len(z) > 1 and z[0][1] != z[1][1]:
+                dx = np.array([ z[0][0], z[1][0] ], dtype='float32')
+                dx -= [x]
+                dx *= dx
+                y = np.array([1, 0], dtype='int')    
+                self.model.partial_fit(X=dx,
+                                       y=y,
+                                       sample_weight=None, # (?)
+                                       classes=(0, 1))
+
+    def __init__(self, epsilon: float, max_memories: int = 1000) -> None:
+
+        routerFactory = lambda: MemorizedLearner_1.LinearModel()
+        scorer        = MemorizedLearner_1.NormalizedLinearProduct()
         randomState   = random.Random(45)
 
         self._epsilon      = epsilon
@@ -322,7 +483,7 @@ class MemorizedLearner:
 
     @property
     def family(self) -> str:
-        return "CMT"
+        return "CMT_1"
 
     @property
     def params(self) -> Dict[str,Any]:
@@ -337,7 +498,7 @@ class MemorizedLearner:
             (greedy_r, greedy_a) = -math.inf, actions[0]
 
             for action in actions:
-                x = MemorizedLearner.flat(context,action)
+                x = MemorizedLearner_1.flat(context,action)
                 (_, z) = self._mem.query(x, 1, 0)
                 if len(z) > 0 and z[0][1] > greedy_r:
                     (greedy_r, greedy_a) = (z[0][1], action)
@@ -347,15 +508,16 @@ class MemorizedLearner:
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float) -> None:
         """Learn about the result of an action that was taken in a context."""
         
-        x = MemorizedLearner.flat(context,action)
+        x = MemorizedLearner_1.flat(context,action)
 
         #this reduces dependencies and simplifies code
         #but requires an extra query. If performance is
         #a problem we could use the `key` param to store
         #the result of this query in `choose` to use here
-        (u,z) = self._mem.query(x, 1, 0)
+        (u,z) = self._mem.query(x, 2, 1)
 
         if len(z) > 0:
+            1 if z[0][1] == actual else 0
             self._mem.update(u, x, z, -(z[0][1]-reward)**2)
         else:
             self._mem.insert(x, reward)
