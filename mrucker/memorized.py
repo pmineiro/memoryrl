@@ -48,7 +48,7 @@ class CMT:
                 if self.right:
                     self.right.parent = self
                 self.g = replacement.g
-  
+
         def topk(self, x, k, f):
             assert self.isLeaf
             return [ z for _, z in zip(range(k), 
@@ -75,7 +75,7 @@ class CMT:
     class LRU:
         def __init__(self):
             self.entries = []
-            self.entry_finder = set()
+            self.entry_finder = {}
             self.n = 0
         
         def add(self, x):
@@ -84,7 +84,7 @@ class CMT:
             assert x not in self.entry_finder
             
             entry = (self.n, x)
-            self.entry_finder.add(x)
+            self.entry_finder[x] = self.n
             heappush(self.entries, entry)
             self.n += 1
             
@@ -97,15 +97,15 @@ class CMT:
         def peek(self):
             from heapq import heappop
             
-            while self.entries[0][1] not in self.entry_finder:
+            while self.entry_finder.get(self.entries[0][1], -1) != self.entries[0][0]:
                 heappop(self.entries)
                 
             return self.entries[0][1]
         
         def remove(self, x):
-            self.entry_finder.remove(x)
+            self.entry_finder.pop(x)
     
-    def __init__(self, routerFactory, scorer, alpha, c, d, randomState, maxMemories=None):
+    def __init__(self, routerFactory, scorer, alpha, c, d, randomState, maxMemories=None, optimizedDeleteRandomState=None):
         self.routerFactory = routerFactory
         self.f = scorer
         self.alpha = alpha
@@ -117,6 +117,7 @@ class CMT:
         self.allkeys = []
         self.allkeysindex = {}
         self.maxMemories = maxMemories 
+        self.odrs = optimizedDeleteRandomState
         self.keyslru = CMT.LRU()
         self.rerouting = False
         self.splitting = False
@@ -155,12 +156,19 @@ class CMT:
                 return ((path.leaf, None, None), path.leaf.randk(k, self.randomState))
             
     def update(self, u, x, z, r):
+        assert 0 <= r <= 1
         if u is None:
             pass
         else:
             (v, a, p) = u
             if v.isLeaf:
                 self.f.update(x, z, r)
+                
+                if self.odrs is not None and len(z) > 0:
+                    q = self.odrs.uniform(0, 1)
+                    if q <= r:
+                        self.keyslru.remove(z[0][0])
+                        self.keyslru.add(z[0][0])
             else:
                 from math import log
 
@@ -267,8 +275,8 @@ class CMT:
         
         if not self.rerouting and not self.splitting:
             if self.maxMemories is not None and len(self.keyslru) > self.maxMemories:
-                oldest = self.keyslru.peek()
-                self.delete(oldest)
+                leastuseful = self.keyslru.peek()
+                self.delete(leastuseful)
 
             for _ in range(self.d):
                 self.__reroute()
@@ -363,9 +371,12 @@ class MemorizedLearner_1:
         (u,z) = self._mem.query(x, k=1, epsilon=1)
 
         if len(z) > 0:
-            self._mem.update(u, x, z, -(z[0][1]-reward)**2)
+            self._mem.update(u, x, z, reward)
 
-        self._mem.insert(x, reward)
+        # We skip for now. Alternatively we could
+        # consider blending repeat contexts in the future
+        if x not in self._mem.leafbykey:
+            self._mem.insert(x, reward)
 
     def flat(self, context,action):
 

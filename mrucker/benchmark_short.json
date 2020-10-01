@@ -9,9 +9,9 @@
         "shuffled_openml_classification_8": { "seed": 888, "type":"classification", "from": {"format":"openml", "id":"$id"} },
         "shuffled_openml_classification_9": { "seed": 999, "type":"classification", "from": {"format":"openml", "id":"$id"} }
     },
-    "batches"     : { "count":51 },
+    "batches"     : { "count":51, "max":2040 },
     "ignore_first": true,
     "simulations" : [
-        {"template":"shuffled_openml_classification_1", "md5_checksum":"1ee268f1d0de784f2b4777437f0fb70f", "$id":6  }
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"1ee268f1d0de784f2b4777437f0fb70f", "$id":11 }
    ]
 }
