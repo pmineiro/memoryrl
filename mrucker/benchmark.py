@@ -13,7 +13,8 @@ learner_factories = [
     lambda: MemorizedLearner_1(.05, 2500),
 ]
 
-result = UniversalBenchmark.from_file("./mrucker/benchmark_short.json").ignore_raise(False).evaluate(learner_factories)
+#result = UniversalBenchmark.from_file("./mrucker/benchmark_short.json").ignore_raise(False).evaluate(learner_factories)
 #result = UniversalBenchmark.from_file("./mrucker/benchmark_long.json").evaluate(learner_factories, "./mrucker/benchmark_long.log")
+result = UniversalBenchmark.from_file("./mrucker/benchmark_med.json").evaluate(learner_factories, "./mrucker/benchmark_med.log")
 
 Plots.standard_plot(result)

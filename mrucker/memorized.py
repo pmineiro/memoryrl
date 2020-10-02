@@ -255,14 +255,14 @@ class CMT:
                      
     def insert(self, x, omega, v=None):
         from math import log
-        
+
         if x in self.leafbykey:
             # duplicate memory ... need to merge values ...
             assert False
-            
+
         if v is None:
             v = self.root
-        
+
         while not v.isLeaf:
             B = log(1e-2 + v.left.n) - log(1e-2 + v.right.n)
             y = (1 - self.alpha) * v.g.predict(x) + self.alpha * B
@@ -270,7 +270,7 @@ class CMT:
             v.g.update(x, signy, 1)
             v.n += 1
             v = v.right if v.g.predict(x) > 0 else v.left
-            
+
         self.__insertLeaf(x, omega, v)
         
         if not self.rerouting and not self.splitting:
@@ -306,7 +306,7 @@ class MemorizedLearner_1:
         
         def update(self, x, y, w):
             self.model.partial_fit(X=[x], y=[y], sample_weight=[w])
-            
+
     class NormalizedLinearProduct:
         def predict(self, x, z):
             (xprime, omegaprime) = z
@@ -361,7 +361,7 @@ class MemorizedLearner_1:
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float) -> None:
         """Learn about the result of an action that was taken in a context."""
-        
+
         x = self.flat(context,action)
 
         #this reduces dependencies and simplifies code
@@ -371,7 +371,7 @@ class MemorizedLearner_1:
         (u,z) = self._mem.query(x, k=1, epsilon=1)
 
         if len(z) > 0:
-            self._mem.update(u, x, z, reward)
+            self._mem.update(u, x, z, (1 -(z[0][1] - reward)**2))
 
         # We skip for now. Alternatively we could
         # consider blending repeat contexts in the future
@@ -381,9 +381,8 @@ class MemorizedLearner_1:
     def flat(self, context,action):
 
         if not isinstance(context,tuple): context = (context,)
-        if not isinstance(action ,tuple): action  = (action,)
 
-        one_hot_action = tuple(self._one_hot_encoder.encode([action[0]])[0])
+        one_hot_action = tuple(self._one_hot_encoder.encode([action])[0])
 
         return context + one_hot_action + tuple(np.reshape(np.outer(context, one_hot_action),-1))
 
