@@ -436,12 +436,13 @@ class MemorizedLearner_1:
     def __init__(self, epsilon: float, max_memories: int = 1000) -> None:
 
         # SkLinearModel is fast, but kinda sucks
-        #routerFactory = lambda: MemorizedLearner_1.SkLinearModel(loss='log', learning_rate='constant', eta0=0.1)
-        routerFactory = lambda: MemorizedLearner_1.LogisticModel(eta0=0.1)
-
         # NormalizedLinearProduct is competitive and fast
-        scorer        = MemorizedLearner_1.NormalizedLinearProduct()
-        #scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-3)
+
+        #routerFactory = lambda: MemorizedLearner_1.SkLinearModel(loss='log', learning_rate='constant', eta0=0.1)
+        #scorer        = MemorizedLearner_1.NormalizedLinearProduct()
+
+        routerFactory = lambda: MemorizedLearner_1.LogisticModel(eta0=0.1)
+        scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-3)
         randomState   = random.Random(45)
         ords          = random.Random(2112)
 
