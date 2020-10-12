@@ -2,7 +2,7 @@
     "templates"   : { 
         "shuffled_openml_classification_1": { "seed": 111, "type":"classification", "from": {"format":"openml", "id":"$id"} }
     },
-    "batches"     : { "count":500, "min":500, "max":500 },
+    "batches"     : { "size":1, "min":1500, "max":1500 },
     "ignore_first": true,
     "simulations" : [
         {"template":"shuffled_openml_classification_1", "md5_checksum":"1ee268f1d0de784f2b4777437f0fb70f", "$id":3   },

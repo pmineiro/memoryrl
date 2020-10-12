@@ -441,8 +441,8 @@ class MemorizedLearner_1:
         #routerFactory = lambda: MemorizedLearner_1.SkLinearModel(loss='log', learning_rate='constant', eta0=0.1)
         #scorer        = MemorizedLearner_1.NormalizedLinearProduct()
 
-        routerFactory = lambda: MemorizedLearner_1.LogisticModel(eta0=0.1)
-        scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-3)
+        routerFactory = lambda: MemorizedLearner_1.LogisticModel(eta0=1e-2)
+        scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-2)
         randomState   = random.Random(45)
         ords          = random.Random(2112)
 
@@ -505,5 +505,6 @@ class MemorizedLearner_1:
         if not isinstance(context,tuple): context = (context,)
 
         one_hot_action = tuple(self._one_hot_encoder.encode([action])[0])
+        contextaction = tuple(np.reshape(np.outer(context, one_hot_action),-1))
 
-        return context + one_hot_action + tuple(np.reshape(np.outer(context, one_hot_action),-1))
+        return context + one_hot_action + contextaction

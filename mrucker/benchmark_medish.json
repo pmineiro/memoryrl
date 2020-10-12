@@ -1,0 +1,17 @@
+{
+    "templates"   : { 
+        "shuffled_openml_classification_1": { "seed": 111, "type":"classification", "from": {"format":"openml", "id":"$id"} }
+    },
+    "batches"     : { "size":1, "min":100, "max":3000 },
+    "ignore_first": true,
+    "simulations" : [
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"ae20cdf9a2ca4572b35c643a119c7e8f", "$id":12  },
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"62888b21bd50a75d48b16044468ea787", "$id":16  },
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"8979aac502bff954867a4c0c34e80db0", "$id":18  },
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"8eeedf70a0addba92d2f3cdf4bc34b89", "$id":21  },
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"ea7308a13534f6e63a15362342857d30", "$id":22  },
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"78a2bdef0cbbda6ec8ed348cb7cecc66", "$id":30  },
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"e0e48f69e8f2da971ee04506b5a4932b", "$id":36  },
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"01ac56387b912e958e4d8fcd106c5e5b", "$id":60  }
+   ]
+}
