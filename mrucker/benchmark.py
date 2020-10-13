@@ -2,6 +2,7 @@ from memorized import MemorizedLearner_1
 from coba.benchmarks import UniversalBenchmark
 from coba.analysis import Plots
 from coba.learners import RandomLearner, EpsilonLearner, UcbTunedLearner, VowpalLearner
+import re
 
 learner_factories = [
     lambda: MemorizedLearner_1(0.1, 100),
@@ -12,9 +13,10 @@ learner_factories = [
 #    lambda: RandomLearner(),
 ]
 
-#result = UniversalBenchmark.from_file("./mrucker/benchmark_short.json").ignore_raise(False).evaluate(learner_factories, "./mrucker/benchmark_short.log")
-#result = UniversalBenchmark.from_file("./mrucker/benchmark_long.json").evaluate(learner_factories, "./mrucker/benchmark_long.log")
-result = UniversalBenchmark.from_file("./mrucker/benchmark_medish.json").evaluate(learner_factories, "./mrucker/benchmark_medish.log")
-#result = UniversalBenchmark.from_file("./mrucker/benchmark_smallish.json").evaluate(learner_factories, "./mrucker/benchmark_smallish.log")
+max_processes = 20
+json = "./mrucker/benchmark_medish.json"
+log = re.sub('json$', 'log', json)
 
-Plots.standard_plot(result)
+if __name__ == '__main__':
+    result = UniversalBenchmark.from_file(json).core_count(max_processes).evaluate(learner_factories, log)
+    Plots.standard_plot(result)

@@ -433,15 +433,19 @@ class MemorizedLearner_1:
         def update(self, x, y, w):
             pass
 
+
+    @staticmethod
+    def routerFactory():
+        #return lambda: MemorizedLearner_1.SkLinearModel(loss='log', learning_rate='constant', eta0=0.1)
+        return MemorizedLearner_1.LogisticModel(eta0=1e-2)
+
     def __init__(self, epsilon: float, max_memories: int = 1000) -> None:
 
         # SkLinearModel is fast, but kinda sucks
         # NormalizedLinearProduct is competitive and fast
 
-        #routerFactory = lambda: MemorizedLearner_1.SkLinearModel(loss='log', learning_rate='constant', eta0=0.1)
         #scorer        = MemorizedLearner_1.NormalizedLinearProduct()
 
-        routerFactory = lambda: MemorizedLearner_1.LogisticModel(eta0=1e-2)
         scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-2)
         randomState   = random.Random(45)
         ords          = random.Random(2112)
@@ -449,7 +453,7 @@ class MemorizedLearner_1:
         self._one_hot_encoder = OneHotEncoder()
 
         self._epsilon      = epsilon
-        self._mem          = CMT(routerFactory, scorer, alpha=0.25, c=10, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=max_memories)
+        self._mem          = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=10, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=max_memories)
         self._update       = {}
         self._max_memories = max_memories
 
