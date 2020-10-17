@@ -6,7 +6,7 @@ from typing import Hashable, Sequence, Dict, Any
 import numpy as np
 import torch
 
-from sklearn.exceptions import NotFittedError 
+from sklearn.exceptions import NotFittedError
 from sklearn import linear_model
 
 from coba.preprocessing import OneHotEncoder
@@ -16,26 +16,26 @@ class CMT:
         def __init__(self, parent, left=None, right=None, g=None):
             self.parent = parent
             self.isLeaf = left is None
-            self.n = 0        
+            self.n = 0
             self.memories = {}
             self.left = left
             self.right = right
             self.g = g
-            
-        def makeInternal(self, g):       
+
+        def makeInternal(self, g):
             assert self.isLeaf
-            
+
             self.isLeaf = False
             self.left = CMT.Node(parent=self)
             self.right = CMT.Node(parent=self)
             self.n = 0
             self.g = g
-            
+
             mem = self.memories
             self.memories = {}
-            
+
             return mem
-        
+
         def replaceNode(self, replacement):
             if self is not replacement:
                 self.isLeaf = replacement.isLeaf
@@ -51,60 +51,60 @@ class CMT:
 
         def topk(self, x, k, f):
             assert self.isLeaf
-            return [ z for _, z in zip(range(k), 
+            return [ z for _, z in zip(range(k),
                                        sorted(self.memories.items(),
                                               key=lambda z: f.predict(x, z),
                                               reverse=True
                                              )
-                                      ) 
+                                      )
                    ]
-        
+
         def randk(self, k, randomState):
             assert self.isLeaf
             return [ z[1] for _, z in zip(range(k),
-                                          sorted( (randomState.uniform(0, 1), m) for m in self.memories.items() 
+                                          sorted( (randomState.uniform(0, 1), m) for m in self.memories.items()
                                                 )
                                       )
                    ]
-    
+
     class Path:
         def __init__(self, nodes, leaf):
             self.nodes = nodes
             self.leaf = leaf
-    
+
     class LRU:
         def __init__(self):
             self.entries = []
             self.entry_finder = {}
             self.n = 0
-        
+
         def add(self, x):
             from heapq import heappush
-            
+
             assert x not in self.entry_finder
-            
+
             entry = (self.n, x)
             self.entry_finder[x] = self.n
             heappush(self.entries, entry)
             self.n += 1
-            
+
         def __len__(self):
             return len(self.entry_finder)
-        
+
         def __contains__(self, x):
             return x in self.entry_finder
-        
+
         def peek(self):
             from heapq import heappop
-            
+
             while self.entry_finder.get(self.entries[0][1], -1) != self.entries[0][0]:
                 heappop(self.entries)
-                
+
             return self.entries[0][1]
-        
+
         def remove(self, x):
             self.entry_finder.pop(x)
-    
+
     def __init__(self, routerFactory, scorer, alpha, c, d, randomState, maxMemories=None, optimizedDeleteRandomState=None):
         self.routerFactory = routerFactory
         self.f = scorer
@@ -113,10 +113,10 @@ class CMT:
         self.d = d
         self.leafbykey = {}
         self.root = CMT.Node(None)
-        self.randomState = randomState        
+        self.randomState = randomState
         self.allkeys = []
         self.allkeysindex = {}
-        self.maxMemories = maxMemories 
+        self.maxMemories = maxMemories
         self.odrs = optimizedDeleteRandomState
         self.keyslru = CMT.LRU()
         self.rerouting = False
@@ -125,22 +125,22 @@ class CMT:
     def nodeForeach(self, f, node=None):
         if node is None:
             node = self.root
-            
+
         f(node)
         if node.left:
             self.nodeForeach(f, node.left)
         if node.right:
             self.nodeForeach(f, node.right)
-        
-    def __path(self, x, v):          
+
+    def __path(self, x, v):
         nodes = []
         while not v.isLeaf:
             a = v.right if v.g.predict(x) > 0 else v.left
             nodes.append(v)
             v = a
-            
+
         return CMT.Path(nodes, v)
-        
+
     def query(self, x, k, epsilon):
         path = self.__path(x, self.root)
         q = self.randomState.uniform(0, 1)
@@ -154,7 +154,7 @@ class CMT:
                 return ((path.nodes[i], a, 1/2), l.topk(x, k, self.f))
             else:
                 return ((path.leaf, None, None), path.leaf.randk(k, self.randomState))
-            
+
     def update(self, u, x, z, r):
         assert 0 <= r <= 1
         if u is None:
@@ -163,7 +163,7 @@ class CMT:
             (v, a, p) = u
             if v.isLeaf:
                 self.f.update(x, z, r)
-                
+
                 if self.odrs is not None and len(z) > 0:
                     q = self.odrs.uniform(0, 1)
                     if q <= r:
@@ -173,30 +173,30 @@ class CMT:
                 from math import log
 
                 rhat = (r/p) * (1 if a == v.right else -1)
-                y = (1 - self.alpha) * rhat + self.alpha * (log(1e-2 + v.left.n) - log(1e-2 + v.right.n)) 
+                y = (1 - self.alpha) * rhat + self.alpha * (log(1e-2 + v.left.n) - log(1e-2 + v.right.n))
                 signy = 1 if y > 0 else -1
                 absy = signy * y
                 v.g.update(x, signy, absy)
-                
+
             for _ in range(self.d):
                 self.__reroute()
-                
+
     def delete(self, x):
         if x not in self.allkeysindex:
             # deleting something not in the memory ...
             assert False
-                    
+
         ind = self.allkeysindex.pop(x)
         lastx = self.allkeys.pop()
         if ind < len(self.allkeys):
             self.allkeys[ind] = lastx
             self.allkeysindex[lastx] = ind
-                
+
         if not self.rerouting:
             self.keyslru.remove(x)
-                
+
         v = self.leafbykey.pop(x)
-        
+
         while v is not None:
             v.n -= 1
             if v.isLeaf:
@@ -210,22 +210,22 @@ class CMT:
 
                     v.parent.replaceNode(other)
                     v = v.parent
-                    
+
             assert v.n >= 0
             v = v.parent
-            
+
     def __insertLeaf(self, x, omega, v):
         from math import log
-        
+
         assert v.isLeaf
 
-        if x not in self.allkeysindex:          
+        if x not in self.allkeysindex:
             self.allkeysindex[x] = len(self.allkeys)
             self.allkeys.append(x)
-        
+
         if not self.rerouting and not self.splitting:
             self.keyslru.add(x)
-                        
+
         if self.splitting or v.n < self.c:
             assert x not in self.leafbykey
             self.leafbykey[x] = v
@@ -236,23 +236,23 @@ class CMT:
         else:
             self.splitting = True
             mem = v.makeInternal(g=self.routerFactory())
-            
+
             while mem:
                 xprime, omegaprime = mem.popitem()
                 del self.leafbykey[xprime]
                 self.insert(xprime, omegaprime, v)
-                
+
             self.insert(x, omega, v)
             self.splitting = False
-            
+
         if not self.rerouting and not self.splitting:
             daleaf = self.leafbykey[x]
             dabest = daleaf.topk(x, 2, self.f)
             if len(dabest) > 1:
-                other = dabest[1] if dabest[0][0] == x else dabest[0] 
+                other = dabest[1] if dabest[0][0] == x else dabest[0]
                 z = [(x, omega), other]
                 self.f.update(x, z, 1)
-                     
+
     def insert(self, x, omega, v=None):
         from math import log
 
@@ -272,7 +272,7 @@ class CMT:
             v = v.right if v.g.predict(x) > 0 else v.left
 
         self.__insertLeaf(x, omega, v)
-        
+
         if not self.rerouting and not self.splitting:
             if self.maxMemories is not None and len(self.keyslru) > self.maxMemories:
                 leastuseful = self.keyslru.peek()
@@ -280,7 +280,7 @@ class CMT:
 
             for _ in range(self.d):
                 self.__reroute()
-                            
+
     def __reroute(self):
         x = self.randomState.choice(self.allkeys)
         omega = self.leafbykey[x].memories[x]
@@ -288,15 +288,15 @@ class CMT:
         self.delete(x)
         self.insert(x, omega)
         self.rerouting = False
-        
+
         for k in self.leafbykey.keys():
             assert k in self.leafbykey[k].memories
 
 class MemorizedLearner_1:
-    class LogisticRegressor(torch.nn.Module):        
+    class LogisticRegressor(torch.nn.Module):
         def __init__(self, output_dim, eta0, bias=True):
             import torch
-            
+
             super(MemorizedLearner_1.LogisticRegressor, self).__init__()
             self.linear = None
             self.output_dim = output_dim
@@ -304,25 +304,25 @@ class MemorizedLearner_1:
             self.eta0 = eta0
             self.n = 0
             self.bias = bias
-            
+
         def incorporate(self, input_dim):
             import torch
             if self.linear is None:
                 self.linear = torch.nn.Linear(input_dim, self.output_dim, bias=self.bias)
                 self.optimizer = torch.optim.Adam(self.linear.parameters(), lr=self.eta0)
-            
+
         def forward(self, X):
             import numpy as np
             import torch
-            
+
             self.incorporate(X.shape[-1])
             return self.linear(torch.autograd.Variable(torch.from_numpy(X)))
-        
+
         def predict(self, X):
             import torch
-            
+
             return torch.argmax(self.forward(X), dim=1).numpy()
-        
+
         def set_lr(self):
             from math import sqrt
             lr = self.eta0 / sqrt(self.n)
@@ -331,7 +331,7 @@ class MemorizedLearner_1:
 
         def partial_fit(self, X, y, sample_weight=None, **kwargs):
             import torch
-            
+
             self.incorporate(X.shape[-1])
             self.optimizer.zero_grad()
             yhat = self.forward(X)
@@ -342,71 +342,162 @@ class MemorizedLearner_1:
             loss.backward()
             self.n += X.shape[0]
             self.set_lr()
-            self.optimizer.step() 
+            self.optimizer.step()
+
 
     class LogisticModel:
         def __init__(self, *args, **kwargs):
+            self.vw = None
+
+        def incorporate(self):
+            if self.vw is None:
+                from os import devnull
+                from coba import execution
+
+                with open(devnull, 'w') as f, execution.redirect_stderr(f):
+                    from vowpalwabbit import pyvw
+                    self.vw = pyvw.vw('--quiet -b 20 --loss_function logistic -q ax --cubic axx --ignore_linear x --coin')
+
+        def predict(self, xraw):
+            self.incorporate()
+
+            (x, a) = xraw
+            ex = ' |x ' + ' '.join(
+                [f'{n+1}:{v}' for n, v in enumerate(x)]
+            )  + ' |a ' + ' '.join(
+                [f'{n+1}:{v}' for n, v in enumerate(a) if v != 0]
+            )
+
+            return self.vw.predict(ex)
+
+        def update(self, xraw, y, w):
+            self.incorporate()
+
+            (x, a) = xraw
+            assert y == 1 or y == -1
+            assert w >= 0
+            ex = f'{y} {w} |x ' + ' '.join(
+                [f'{n+1}:{v}' for n, v in enumerate(x)]
+            )  + ' |a ' + ' '.join(
+                [f'{n+1}:{v}' for n, v in enumerate(a) if v != 0]
+            )
+
+            self.vw.learn(ex)
+
+    class FlassLogisticModel:
+        def __init__(self, *args, **kwargs):
             kwargs['output_dim'] = 2
             self.model = MemorizedLearner_1.LogisticRegressor(*args, **kwargs)
-            
+
         def predict(self, x):
             import numpy as np
-            
+
             F = self.model.forward(X=np.array([x], dtype='float32')).detach().numpy()
             dF = F[:,1] - F[:,0]
-            return -1 + 2 * dF          
-        
+            return -1 + 2 * dF
+
         def update(self, x, y, w):
             import numpy as np
-            
+
             assert y == 1 or y == -1
-            
-            self.model.partial_fit(X=np.array([x], dtype='float32'), 
-                                   y=(1 + np.array([y], dtype='int')) // 2, 
+
+            self.model.partial_fit(X=np.array([x], dtype='float32'),
+                                   y=(1 + np.array([y], dtype='int')) // 2,
                                    sample_weight=np.array([w], dtype='float32'),
                                    classes=(0, 1))
 
     class LearnedEuclideanDistance:
         def __init__(self, *args, **kwargs):
+            self.vw = None
+
+        def incorporate(self):
+            if self.vw is None:
+                from vowpalwabbit import pyvw
+
+                self.vw = pyvw.vw('--quiet -b 20 --noconstant --loss_function logistic --coin')
+
+        def predict(self, xraw, z):
+            self.incorporate()
+
+            import numpy as np
+
+            (x, a) = xraw
+
+            (xprimeraw, omegaprime) = z
+            (xprime, aprime) = xprimeraw
+
+            xa = np.reshape(np.outer(x, a), -1)
+            xaprime = np.reshape(np.outer(xprime, aprime), -1)
+
+            dxa = xa - xaprime
+
+            ex = f' |x ' + ' '.join([f'{n+1}:{v*v}' for n, v in enumerate(dxa)])
+            return -0.01 * dxa.dot(dxa) + self.vw.predict(ex)
+
+        def update(self, xraw, z, r):
+            self.incorporate()
+
+            import numpy as np
+
+            if r == 1 and len(z) > 1 and z[0][1] != z[1][1]:
+                (x, a) = xraw
+                xa = np.reshape(np.outer(x, a), -1)
+
+                (xprime, aprime) = z[0][0]
+                xaprime = np.reshape(np.outer(xprime, aprime), -1)
+                dxa = xa - xaprime
+                initial = -0.01 * dxa.dot(dxa)
+                ex = f'1 1 {initial} |x ' + ' '.join([f'{n+1}:{v*v}' for n, v in enumerate(dxa)])
+                self.vw.learn(ex)
+
+                (xprime, aprime) = z[1][0]
+                xaprime = np.reshape(np.outer(xprime, aprime), -1)
+                dxa = xa - xaprime
+                initial = -0.01 * dxa.dot(dxa)
+                ex = f'-1 1 {initial} |x ' + ' '.join([f'{n+1}:{v*v}' for n, v in enumerate(dxa)])
+                self.vw.learn(ex)
+
+    class FlassLearnedEuclideanDistance:
+        def __init__(self, *args, **kwargs):
             kwargs['output_dim'] = 2
             kwargs['bias'] = False
             self.model = MemorizedLearner_1.LogisticRegressor(*args, **kwargs)
-            
+
         def incorporate(self, input_dim):
             if self.model.linear is None:
                 self.model.incorporate(input_dim)
                 self.model.linear.weight.data[0,:].fill_(0.01 / input_dim)
                 self.model.linear.weight.data[1,:].fill_(-0.01 / input_dim)
-        
+
         def predict(self, x, z):
             import numpy as np
-                        
+
             (xprime, omegaprime) = z
-            
+
             dx = np.array([x], dtype='float32')
             dx -= [xprime]
             dx *= dx
-            
+
             self.incorporate(dx.shape[-1])
-            
+
             F = self.model.forward(dx).detach().numpy()
             dist = F[0,1] - F[0,0]
             return dist
-        
+
         def update(self, x, z, r):
             import numpy as np
-            
+
             if r == 1 and len(z) > 1 and z[0][1] != z[1][1]:
                 dx = np.array([ z[0][0], z[1][0] ], dtype='float32')
                 dx -= [x]
                 dx *= dx
                 self.incorporate(dx.shape[-1])
-                y = np.array([1, 0], dtype='int')    
+                y = np.array([1, 0], dtype='int')
                 self.model.partial_fit(X=dx,
                                        y=y,
                                        sample_weight=None, # (?)
                                        classes=(0, 1))
- 
+
 
     class SkLinearModel:
         def __init__(self, *args, **kwargs):
@@ -417,7 +508,7 @@ class MemorizedLearner_1:
                 return self.model.predict(X=[x])[0]
             except NotFittedError:
                 return 0
-        
+
         def update(self, x, y, w):
             self.model.partial_fit(X=[x], y=[y], sample_weight=[w], classes=(-1,1))
 
@@ -506,9 +597,10 @@ class MemorizedLearner_1:
 
     def flat(self, context,action):
 
-        if not isinstance(context,tuple): context = (context,)
+        #if not isinstance(context,tuple): context = (context,)
 
-        one_hot_action = tuple(self._one_hot_encoder.encode([action])[0])
-        contextaction = tuple(np.reshape(np.outer(context, one_hot_action),-1))
+        #one_hot_action = tuple(self._one_hot_encoder.encode([action])[0])
+        #contextaction = tuple(np.reshape(np.outer(context, one_hot_action),-1))
 
-        return context + one_hot_action + contextaction
+        #return context + one_hot_action + contextaction
+        return (context, action)

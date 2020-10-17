@@ -7,13 +7,13 @@ import re
 learner_factories = [
     lambda: MemorizedLearner_1(0.1, 100),
     lambda: MemorizedLearner_1(0.1, 500),
-    lambda: VowpalLearner(bag=5),
+    lambda: VowpalLearner(epsilon=0.1),
     lambda: UcbTunedLearner(),
 #    lambda: EpsilonLearner(0.05),
 #    lambda: RandomLearner(),
 ]
 
-max_processes = 20
+max_processes = 2
 json = "./mrucker/benchmark_medish.json"
 log = re.sub('json$', 'log', json)
 
