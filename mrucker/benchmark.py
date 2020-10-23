@@ -11,10 +11,11 @@ learner_factories = [
     LearnerFactory(UcbTunedLearner),
 ]
 
-max_processes = 2
-json = "./mrucker/benchmark_medish.json"
+processes = 2
+maxtasksperchild=5
+json = "./mrucker/benchmark_short.json"
 log = re.sub('json$', 'log', json)
 
 if __name__ == '__main__':
-    result = UniversalBenchmark.from_file(json).max_processes(max_processes).evaluate(learner_factories, log)
+    result = UniversalBenchmark.from_file(json).processes(processes).maxtasksperchild(maxtasksperchild).evaluate(learner_factories, log)
     Plots.standard_plot(result)
