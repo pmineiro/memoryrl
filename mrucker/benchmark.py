@@ -16,5 +16,5 @@ json = "./mrucker/benchmark_medish.json"
 log = re.sub('json$', 'log', json)
 
 if __name__ == '__main__':
-    result = UniversalBenchmark.from_file(json).core_count(max_processes).evaluate(learner_factories, log)
+    result = UniversalBenchmark.from_file(json).max_processes(max_processes).evaluate(learner_factories, log)
     Plots.standard_plot(result)
