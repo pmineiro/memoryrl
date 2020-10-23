@@ -1,16 +1,14 @@
 from memorized import MemorizedLearner_1
-from coba.benchmarks import UniversalBenchmark
+from coba.benchmarks import UniversalBenchmark, LearnerFactory
 from coba.analysis import Plots
-from coba.learners import RandomLearner, EpsilonLearner, UcbTunedLearner, VowpalLearner
+from coba.learners import UcbTunedLearner, VowpalLearner
 import re
 
 learner_factories = [
-    lambda: MemorizedLearner_1(0.1, 100),
-    lambda: MemorizedLearner_1(0.1, 500),
-    lambda: VowpalLearner(epsilon=0.1),
-    lambda: UcbTunedLearner(),
-#    lambda: EpsilonLearner(0.05),
-#    lambda: RandomLearner(),
+    LearnerFactory(MemorizedLearner_1, 0.1, 100),
+    LearnerFactory(MemorizedLearner_1, 0.1, 500),
+    LearnerFactory(VowpalLearner, epsilon=0.1),
+    LearnerFactory(UcbTunedLearner),
 ]
 
 max_processes = 2
