@@ -11,9 +11,9 @@ learner_factories = [
     LearnerFactory(UcbTunedLearner),
 ]
 
-processes = 2
-maxtasksperchild=5
-json = "./mrucker/benchmark_short.json"
+processes = 20 
+maxtasksperchild = 1
+json = "./mrucker/benchmark_longish.json"
 log = re.sub('json$', 'log', json)
 
 if __name__ == '__main__':
