@@ -2,7 +2,8 @@
     "templates"   : { 
         "shuffled_openml_classification_1": { "seed": 111, "type":"classification", "from": {"format":"openml", "id":"$id"} }
     },
-    "batches"     : { "size":1, "min": 1000, "max":1000 },
+    "shuffle": [777,888,999],
+    "batches"     : { "size":1, "min": 2000, "max": 2000 },
     "ignore_first": true,
     "simulations" : [
         {"template":"shuffled_openml_classification_1", "md5_checksum":"1ee268f1d0de784f2b4777437f0fb70f", "$id":3   },
@@ -51,6 +52,12 @@
         {"template":"shuffled_openml_classification_1", "md5_checksum":"15058974eb87f1ef47485394cbce3e51", "$id":160 },
         {"template":"shuffled_openml_classification_1", "md5_checksum":"285778c483b48f344ca78daedd1372a1", "$id":161 },
         {"template":"shuffled_openml_classification_1", "md5_checksum":"8629038255c8f3cc27a32d1bad83c91b", "$id":162 },
-        {"template":"shuffled_openml_classification_1", "md5_checksum":"24dcd2387025c194f60a771726390973", "$id":180 }
+        {"template":"shuffled_openml_classification_1", "md5_checksum":"24dcd2387025c194f60a771726390973", "$id":180 },
+	{"template":"shuffled_openml_classification_1", "md5_checksum":"24dcd2387025c194f60a771726390973", "$id":1472 },
+	{"template":"shuffled_openml_classification_1", "md5_checksum":"24dcd2387025c194f60a771726390973", "$id":40971 },
+	{"template":"shuffled_openml_classification_1", "md5_checksum":"24dcd2387025c194f60a771726390973", "$id":1492 },
+	{"template":"shuffled_openml_classification_1", "md5_checksum":"24dcd2387025c194f60a771726390973", "$id":1493 },
+	{"template":"shuffled_openml_classification_1", "md5_checksum":"24dcd2387025c194f60a771726390973", "$id":313 },
+	{"template":"shuffled_openml_classification_1", "md5_checksum":"24dcd2387025c194f60a771726390973", "$id":183 }
    ]
 }

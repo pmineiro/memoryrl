@@ -4,10 +4,6 @@ import math
 from typing import Hashable, Sequence, Dict, Any
 
 import numpy as np
-#import torch
-#
-#from sklearn.exceptions import NotFittedError
-#from sklearn import linear_model
 
 from coba.preprocessing import OneHotEncoder
 
@@ -186,6 +182,11 @@ class CMT:
             for _ in range(self.d):
                 self.__reroute()
 
+    def updateomega(self, x, newomega):
+        v = self.leafbykey[x]
+        assert v.isLeaf
+        v.memories[x] = newomega
+
     def delete(self, x):
         if x not in self.allkeysindex:
             # deleting something not in the memory ...
@@ -239,8 +240,6 @@ class CMT:
             v.n += 1
             assert v.n == len(v.memories)
         else:
-            #assert v.depth < 9, f'huh {v.depth} {v.n} {self.c}'
-
             self.splitting = True
             mem = v.makeInternal(g=self.routerFactory())
 
@@ -251,9 +250,6 @@ class CMT:
 
             self.insert(x, omega, v)
             self.splitting = False
-
-            #B = log(1e-2 + v.left.n) - log(1e-2 + v.right.n)
-            #assert v.left.n > 5 and v.right.n > 5, f'whoops {v.left.n} {v.right.n} {B}'
 
         if not self.rerouting and not self.splitting:
             daleaf = self.leafbykey[x]
@@ -299,62 +295,11 @@ class CMT:
         self.insert(x, omega)
         self.rerouting = False
 
-        for k in self.leafbykey.keys():
-            assert k in self.leafbykey[k].memories
+        if False:
+            for k in self.leafbykey.keys():
+                assert k in self.leafbykey[k].memories
 
 class MemorizedLearner_1:
-#    class LogisticRegressor(torch.nn.Module):
-#        def __init__(self, output_dim, eta0, bias=True):
-#            import torch
-#
-#            super(MemorizedLearner_1.LogisticRegressor, self).__init__()
-#            self.linear = None
-#            self.output_dim = output_dim
-#            self.loss = torch.nn.CrossEntropyLoss()
-#            self.eta0 = eta0
-#            self.n = 0
-#            self.bias = bias
-#
-#        def incorporate(self, input_dim):
-#            import torch
-#            if self.linear is None:
-#                self.linear = torch.nn.Linear(input_dim, self.output_dim, bias=self.bias)
-#                self.optimizer = torch.optim.Adam(self.linear.parameters(), lr=self.eta0)
-#
-#        def forward(self, X):
-#            import numpy as np
-#            import torch
-#
-#            self.incorporate(X.shape[-1])
-#            return self.linear(torch.autograd.Variable(torch.from_numpy(X)))
-#
-#        def predict(self, X):
-#            import torch
-#
-#            return torch.argmax(self.forward(X), dim=1).numpy()
-#
-#        def set_lr(self):
-#            from math import sqrt
-#            lr = self.eta0 / sqrt(self.n)
-#            for g in self.optimizer.param_groups:
-#                g['lr'] = lr
-#
-#        def partial_fit(self, X, y, sample_weight=None, **kwargs):
-#            import torch
-#
-#            self.incorporate(X.shape[-1])
-#            self.optimizer.zero_grad()
-#            yhat = self.forward(X)
-#            if sample_weight is None:
-#                loss = self.loss(yhat, torch.from_numpy(y))
-#            else:
-#                loss = torch.from_numpy(sample_weight) * self.loss(yhat, torch.from_numpy(y))
-#            loss.backward()
-#            self.n += X.shape[0]
-#            self.set_lr()
-#            self.optimizer.step()
-
-
     class LogisticModel:
         def __init__(self, *args, **kwargs):
             self.vw = None
@@ -394,28 +339,6 @@ class MemorizedLearner_1:
 
             self.vw.learn(ex)
 
-    class FlassLogisticModel:
-        def __init__(self, *args, **kwargs):
-            kwargs['output_dim'] = 2
-            self.model = MemorizedLearner_1.LogisticRegressor(*args, **kwargs)
-
-        def predict(self, x):
-            import numpy as np
-
-            F = self.model.forward(X=np.array([x], dtype='float32')).detach().numpy()
-            dF = F[:,1] - F[:,0]
-            return -1 + 2 * dF
-
-        def update(self, x, y, w):
-            import numpy as np
-
-            assert y == 1 or y == -1
-
-            self.model.partial_fit(X=np.array([x], dtype='float32'),
-                                   y=(1 + np.array([y], dtype='int')) // 2,
-                                   sample_weight=np.array([w], dtype='float32'),
-                                   classes=(0, 1))
-
     class LearnedEuclideanDistance:
         def __init__(self, *args, **kwargs):
             self.vw = None
@@ -450,120 +373,36 @@ class MemorizedLearner_1:
 
             import numpy as np
 
-            if r == 1 and len(z) > 1 and z[0][1] != z[1][1]:
+            if r > 0 and len(z) > 1:
                 (x, a) = xraw
                 xa = np.hstack(( x, a, np.reshape(np.outer(x, a), -1) ))
 
                 (xprime, aprime) = z[0][0]
                 xaprime = np.hstack(( xprime, aprime, np.reshape(np.outer(xprime, aprime), -1) ))
                 dxa = xa - xaprime
-                #initial = -0.01 * dxa.dot(dxa)
-
-                #ex = f'1 1 {initial} |x ' + ' '.join([f'{n+1}:{v*v}' for n, v in enumerate(dxa)])
-                #self.vw.learn(ex)
 
                 (xpp, app) = z[1][0]
                 xapp = np.hstack(( xpp, app, np.reshape(np.outer(xpp, app), -1) ))
                 dxap = xa - xapp
-                #initial = -0.01 * dxap.dot(dxap)
-
-                #ex = f'-1 1 {initial} |x ' + ' '.join([f'{n+1}:{v*v}' for n, v in enumerate(dxap)])
-                #self.vw.learn(ex)
 
                 initial = 0.01 * (dxa.dot(dxa) - dxap.dot(dxap))
 
-                ex = f'1 1 {initial} |x ' + ' '.join([f'{n+1}:{v*v-vp*vp}' for n, (v, vp) in enumerate(zip(dxa, dxap))])
-
-
-    class FlassLearnedEuclideanDistance:
-        def __init__(self, *args, **kwargs):
-            kwargs['output_dim'] = 2
-            kwargs['bias'] = False
-            self.model = MemorizedLearner_1.LogisticRegressor(*args, **kwargs)
-
-        def incorporate(self, input_dim):
-            if self.model.linear is None:
-                self.model.incorporate(input_dim)
-                self.model.linear.weight.data[0,:].fill_(0.01 / input_dim)
-                self.model.linear.weight.data[1,:].fill_(-0.01 / input_dim)
-
-        def predict(self, x, z):
-            import numpy as np
-
-            (xprime, omegaprime) = z
-
-            dx = np.array([x], dtype='float32')
-            dx -= [xprime]
-            dx *= dx
-
-            self.incorporate(dx.shape[-1])
-
-            F = self.model.forward(dx).detach().numpy()
-            dist = F[0,1] - F[0,0]
-            return dist
-
-        def update(self, x, z, r):
-            import numpy as np
-
-            if r == 1 and len(z) > 1 and z[0][1] != z[1][1]:
-                dx = np.array([ z[0][0], z[1][0] ], dtype='float32')
-                dx -= [x]
-                dx *= dx
-                self.incorporate(dx.shape[-1])
-                y = np.array([1, 0], dtype='int')
-                self.model.partial_fit(X=dx,
-                                       y=y,
-                                       sample_weight=None, # (?)
-                                       classes=(0, 1))
-
-
-    class SkLinearModel:
-        def __init__(self, *args, **kwargs):
-            self.model = linear_model.SGDClassifier(*args, **kwargs)
-
-        def predict(self, x):
-            try:
-                return self.model.predict(X=[x])[0]
-            except NotFittedError:
-                return 0
-
-        def update(self, x, y, w):
-            self.model.partial_fit(X=[x], y=[y], sample_weight=[w], classes=(-1,1))
-
-    class NormalizedLinearProduct:
-        def predict(self, x, z):
-            (xprime, omegaprime) = z
-
-            xa      = np.array(x)
-            xprimea = np.array(xprime)
-
-            return np.inner(xa, xprimea) / math.sqrt(np.inner(xa, xa) * np.inner(xprimea, xprimea))
-
-        def update(self, x, y, w):
-            pass
+                ex = f'1 {r} {initial} |x ' + ' '.join([f'{n+1}:{v*v-vp*vp}' for n, (v, vp) in enumerate(zip(dxa, dxap))])
 
 
     @staticmethod
     def routerFactory():
-        #return lambda: MemorizedLearner_1.SkLinearModel(loss='log', learning_rate='constant', eta0=0.1)
         return MemorizedLearner_1.LogisticModel(eta0=1e-2)
 
     def __init__(self, epsilon: float, max_memories: int = 1000) -> None:
-
-        # SkLinearModel is fast, but kinda sucks
-        # NormalizedLinearProduct is competitive and fast
-
-        #scorer        = MemorizedLearner_1.NormalizedLinearProduct()
 
         scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-2)
         randomState   = random.Random(45)
         ords          = random.Random(2112)
 
-        self._one_hot_encoder = OneHotEncoder()
-
         self._epsilon      = epsilon
         self._probs        = {}
-        self._mem          = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.5, c=40, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=max_memories)
+        self._mem          = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=40, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=max_memories)
         self._update       = {}
         self._max_memories = max_memories
         self._random = random.Random(31337)
@@ -578,9 +417,6 @@ class MemorizedLearner_1:
 
     def choose(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> int:
         """Choose which action index to take."""
-
-        if not self._one_hot_encoder.is_fit:
-            self._one_hot_encoder = self._one_hot_encoder.fit(actions)
 
         (greedy_r, greedy_a) = -math.inf, actions[0]
 
@@ -599,7 +435,7 @@ class MemorizedLearner_1:
             self._probs[key] = (p, minp)
             return ra
         else:
-            p = 1.0 - self._epsilon + minp 
+            p = 1.0 - self._epsilon + minp
             self._probs[key] = (p, minp)
             return ga
 
@@ -612,12 +448,16 @@ class MemorizedLearner_1:
         #but requires an extra query. If performance is
         #a problem we could use the `key` param to store
         #the result of this query in `choose` to use here
-        (u,z) = self._mem.query(x, k=1, epsilon=1)
+        (u,z) = self._mem.query(x, k=2, epsilon=1)
 
-        (p, minp) = self._probs[key]
+        (p, minp) = self._probs.pop(key)
 
         if len(z) > 0:
-            self._mem.update(u, x, z, (minp/p)*(1 -(z[0][1] - reward)**2))
+            megalr = 0.1
+            newval = (1.0 - megalr) * z[0][1] + megalr * reward
+            self._mem.updateomega(z[0][0], newval)
+
+            self._mem.update(u, x, z, (1 -(newval - reward)**2))
 
         # We skip for now. Alternatively we could
         # consider blending repeat contexts in the future
@@ -625,12 +465,92 @@ class MemorizedLearner_1:
             self._mem.delete(x)
         self._mem.insert(x, reward)
 
-    def flat(self, context,action):
-
-        #if not isinstance(context,tuple): context = (context,)
-
-        #one_hot_action = tuple(self._one_hot_encoder.encode([action])[0])
-        #contextaction = tuple(np.reshape(np.outer(context, one_hot_action),-1))
-
-        #return context + one_hot_action + contextaction
+    def flat(self, context, action):
         return (context, action)
+
+class ResidualLearner_1:
+    def __init__(self, epsilon: float, max_memories: int):
+        from os import devnull
+        from coba import execution
+
+        with open(devnull, 'w') as f, execution.redirect_stderr(f):
+            from vowpalwabbit import pyvw
+            self.vw = pyvw.vw(f'--quiet --cb_adf -q sa --cubic ssa --ignore_linear s')
+        self.memory = MemorizedLearner_1(0.0, max_memories)
+        self._epsilon = epsilon
+        self._max_memories = max_memories
+        self._random = random.Random(0xdeadbeef)
+        self._probs = {}
+
+    @property
+    def family(self) -> str:
+        return "CMT_Residual"
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return {'e':self._epsilon, 'm': self._max_memories}
+
+    def toadf(self, context, actions, label=None):
+        assert type(context) is tuple, context
+
+        return '\n'.join([
+          'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(context) ]),
+          ] + [
+            f'{dacost} |a ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(a) if v != 0 ])
+            for n, a in enumerate(actions)
+            for dacost in ((f'0:{label[1]}:{label[2]}' if label is not None and n == label[0] else ''),)
+        ])
+
+    def choose(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> int:
+        """Choose which action index to take."""
+
+        exstr = self.toadf(context, actions)
+        predict = self.vw.predict(exstr)
+        deltas = []
+
+        for n, action in enumerate(actions):
+            mq = self.memory.flat(context, action)
+            (_, z) = self.memory._mem.query(mq, 1, 0)
+            deltas.append(z[0][1] if len(z) > 0 else 0)
+
+        ga = min(((p + dp, n)
+                 for p, dp, n in zip(predict, deltas, range(len(actions))))
+                )[1]
+        minp = self._epsilon / len(actions)
+
+        if self._random.random() < self._epsilon:
+            ra = self._random.randint(0, len(actions)-1)
+            p = 1.0 - self._epsilon + minp if ra == ga else minp
+            self._probs[key] = (p, minp, ra, predict[ra], actions)
+            return ra
+        else:
+            p = 1.0 - self._epsilon + minp
+            self._probs[key] = (p, minp, ga, predict[ga], actions)
+            return ga
+
+
+    def learn(self, key: int, context: Hashable, action: Hashable, reward: float) -> None:
+        """Learn about the result of an action that was taken in a context."""
+
+        (p, minp, aind, ascore, actions) = self._probs.pop(key)
+        exstr = self.toadf(context, actions, (aind, -reward, p))
+        self.vw.learn(exstr)
+
+        x = self.memory.flat(context, action)
+        (u, z) = self.memory._mem.query(x, k=2, epsilon=1)
+
+        if len(z) > 0:
+            megalr = 0.1
+            newval = (1.0 - megalr) * z[0][1] + megalr * (-reward - ascore)
+            self.memory._mem.updateomega(z[0][0], newval)
+
+            deltarvw = max(-1, min(1, ascore + reward))
+            deltarcombo = max(-1, min(1, ascore + newval + reward))
+            rupdate = max(0, abs(deltarvw) - abs(deltarcombo))
+
+            self.memory._mem.update(u, x, z, rupdate)
+
+        # replicate duplicates for now.  TODO: update memories
+        if x in self.memory._mem.leafbykey:
+            self.memory._mem.delete(x)
+        self.memory._mem.insert(x, -reward - ascore)
