@@ -311,7 +311,7 @@ class MemorizedLearner_1:
 
                 with open(devnull, 'w') as f, execution.redirect_stderr(f):
                     from vowpalwabbit import pyvw
-                    self.vw = pyvw.vw('--quiet -b 16 --loss_function logistic --link=glf1 -q ax --cubic axx --coin')
+                    self.vw = pyvw.vw('--quiet -b 16 --loss_function logistic --link=glf1 -q ax --cubic axx')
 
         def predict(self, xraw):
             self.incorporate()
@@ -347,7 +347,7 @@ class MemorizedLearner_1:
             if self.vw is None:
                 from vowpalwabbit import pyvw
 
-                self.vw = pyvw.vw('--quiet -b 16 --noconstant --loss_function logistic -qxx --link=glf1 --coin')
+                self.vw = pyvw.vw('--quiet -b 16 --noconstant --loss_function logistic -qxx --link=glf1')
 
         def predict(self, xraw, z):
             self.incorporate()
