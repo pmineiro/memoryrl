@@ -3,10 +3,6 @@ import math
 
 from typing import Hashable, Sequence, Dict, Any
 
-import numpy as np
-
-from coba.preprocessing import OneHotEncoder
-
 class CMT:
     class Node:
         def __init__(self, parent, left=None, right=None, g=None):
@@ -389,23 +385,23 @@ class MemorizedLearner_1:
 
                 ex = f'1 {r} {initial} |x ' + ' '.join([f'{n+1}:{v*v-vp*vp}' for n, (v, vp) in enumerate(zip(dxa, dxap))])
 
-
     @staticmethod
     def routerFactory():
         return MemorizedLearner_1.LogisticModel(eta0=1e-2)
 
     def __init__(self, epsilon: float, max_memories: int = 1000) -> None:
 
-        scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-2)
-        randomState   = random.Random(45)
-        ords          = random.Random(2112)
-
         self._epsilon      = epsilon
+        self._max_memories = max_memories        
+        self._random       = random.Random(31337)
         self._probs        = {}
-        self._mem          = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=40, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=max_memories)
         self._update       = {}
-        self._max_memories = max_memories
-        self._random = random.Random(31337)
+
+    def init(self):
+        scorer      = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-2)
+        randomState = random.Random(45)
+        ords        = random.Random(2112)
+        self._mem   = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=40, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
 
     @property
     def family(self) -> str:
@@ -470,17 +466,22 @@ class MemorizedLearner_1:
 
 class ResidualLearner_1:
     def __init__(self, epsilon: float, max_memories: int):
-        from os import devnull
-        from coba import execution
-
-        with open(devnull, 'w') as f, execution.redirect_stderr(f):
-            from vowpalwabbit import pyvw
-            self.vw = pyvw.vw(f'--quiet --cb_adf -q sa --cubic ssa --ignore_linear s')
-        self.memory = MemorizedLearner_1(0.0, max_memories)
         self._epsilon = epsilon
         self._max_memories = max_memories
         self._random = random.Random(0xdeadbeef)
         self._probs = {}
+        
+        self.memory = MemorizedLearner_1(0.0, self._max_memories)
+
+    def init(self):
+        from os import devnull
+        from coba import execution
+        from vowpalwabbit import pyvw
+
+        with open(devnull, 'w') as f, execution.redirect_stderr(f):
+            self.vw = pyvw.vw(f'--quiet --cb_adf -q sa --cubic ssa --ignore_linear s')
+        
+        self.memory.init()
 
     @property
     def family(self) -> str:

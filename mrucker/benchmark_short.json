@@ -1,17 +1,10 @@
 {
     "templates"   : { 
-        "shuffled_openml_classification_1": { "seed": 111, "type":"classification", "from": {"format":"openml", "id":"$id"} },
-        "shuffled_openml_classification_2": { "seed": 222, "type":"classification", "from": {"format":"openml", "id":"$id"} },
-        "shuffled_openml_classification_3": { "seed": 333, "type":"classification", "from": {"format":"openml", "id":"$id"} },
-        "shuffled_openml_classification_4": { "seed": 444, "type":"classification", "from": {"format":"openml", "id":"$id"} },
-        "shuffled_openml_classification_5": { "seed": 555, "type":"classification", "from": {"format":"openml", "id":"$id"} },
-        "shuffled_openml_classification_7": { "seed": 777, "type":"classification", "from": {"format":"openml", "id":"$id"} },
-        "shuffled_openml_classification_8": { "seed": 888, "type":"classification", "from": {"format":"openml", "id":"$id"} },
-        "shuffled_openml_classification_9": { "seed": 999, "type":"classification", "from": {"format":"openml", "id":"$id"} }
+        "openml": { "type":"classification", "from": {"format":"openml", "id":"$id"} }
     },
     "batches"     : { "count":51, "max":2040 },
     "ignore_first": true,
     "simulations" : [
-        {"template":"shuffled_openml_classification_1", "$id":11 }
+        {"template":"openml", "$id":11 }
    ]
 }
