@@ -25,6 +25,6 @@ class BernoulliNoiseLearner:
     def learn(self, key, context, action, reward) -> None:
 
         if random.random() < self._noise_prob:
-            reward = abs(reward-1)
+            reward = 1-reward
 
         self._learner.learn(key,context,action,reward)

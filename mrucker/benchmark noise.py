@@ -23,7 +23,7 @@ for noise_level in noise_levels:
 
 processes = 3
 maxtasksperchild = None
-json = "./mrucker/benchmark_longish.json"
+json = "./mrucker/benchmark_medish.json"
 log = re.sub('\.json$', '_noise.log', json)
 
 if __name__ == '__main__':
