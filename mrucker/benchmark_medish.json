@@ -3,7 +3,7 @@
         "openml": { "type":"classification", "from": {"format":"openml", "id":"$id"} }
     },
     "shuffle": [111,222,333],
-    "batches"     : { "size":3, "min": 2000, "max":2000 },
+    "batches"     : { "size":2, "min": 1000, "max":1000 },
     "ignore_first": true,
     "simulations" : [
         {"template":"openml", "md5_checksum":"1ee268f1d0de784f2b4777437f0fb70f", "$id":3   },

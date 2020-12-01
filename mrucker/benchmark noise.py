@@ -7,14 +7,14 @@ import re
 
 base_learners = [
     ResidualLearner_1(0.1, 100),
-    MemorizedLearner_1( 0.1, 100),
-    ResidualLearner_1( 0.1, 200),
-    MemorizedLearner_1( 0.1, 200),
+    MemorizedLearner_1(0.1, 100),
+    ResidualLearner_1(0.1, 200),
+    MemorizedLearner_1(0.1, 200),
     VowpalLearner(seed=10, epsilon=0.1),
     UcbTunedLearner(),
 ]
 
-noise_levels = [0.01, 0.05, 0.1, 0.25, 0.5]
+noise_levels = [0.0, 0.1, 0.25]
 noisy_learners = []
 
 for noise_level in noise_levels:
