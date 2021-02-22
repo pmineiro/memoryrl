@@ -8,7 +8,7 @@ from sklearn.exceptions import NotFittedError
 from sklearn import linear_model
 from torch import nn
 from torch import optim
-from coba.preprocessing import OneHotEncoder
+#from coba.preprocessing import OneHotEncoder
 
 class CMT:
     class Node:
@@ -539,7 +539,7 @@ class MemorizedLearner_1:
         randomState   = random.Random(45)
         ords          = random.Random(2112)
 
-        self._one_hot_encoder = OneHotEncoder()
+        #self._one_hot_encoder = OneHotEncoder()
 
         self._epsilon      = epsilon
         self._mem          = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=10, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=max_memories)
@@ -558,8 +558,8 @@ class MemorizedLearner_1:
     def choose(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> int:
         """Choose which action index to take."""
 
-        if not self._one_hot_encoder.is_fit:
-            self._one_hot_encoder = self._one_hot_encoder.fit(actions)
+        #if not self._one_hot_encoder.is_fit:
+        #    self._one_hot_encoder = self._one_hot_encoder.fit(actions)
         if random.random() < self._epsilon:
             return random.randint(0,len(actions)-1)
         else:
@@ -575,7 +575,10 @@ class MemorizedLearner_1:
                 (_, z) = self._mem.query(x, 1, 0)
                 if len(z) > 0: pred = z[0][1]
                 if len(z) > 0 and param:
-                    pred = 0.5 * (output +  pred)
+                    conf = 2 * torch.abs(output - 0.5)
+                    scale = self.scale(conf)
+                    pred = 0.5 * (output +  pred).item()
+                    #pred = output
                 if len(z) > 0 and pred > greedy_r:
                     (greedy_r, greedy_a) = (z[0][1], action)
 
@@ -588,7 +591,11 @@ class MemorizedLearner_1:
         xcat = np.concatenate(x)
         if len(self.parametrized_model) == 0: 
             self.parametrized_model = nn.Sequential(nn.Linear(len(xcat), 1), nn.Sigmoid())
-            self.opt = optim.Adam(self.parametrized_model.parameters(), lr=0.1)
+            self.scale = nn.Sequential(nn.Linear(1, 1), nn.Sigmoid())
+            #### Mark, change the learning rate below
+            self.opt = optim.Adam(self.parametrized_model.parameters(), lr=1)
+            ## the scale isn't being used here, that was a separate experiment
+            self.opt_scale = optim.Adam(self.scale.parameters(), lr=1)
 
 
         #this reduces dependencies and simplifies code
@@ -599,11 +606,14 @@ class MemorizedLearner_1:
         if len(z) > 0:
             self._mem.update(u, x, z, (1 -(z[0][1] - reward)**2))
             output = self.parametrized_model(torch.Tensor(xcat))
+            conf = 2 * torch.abs(output - 0.5)
+            scale = self.scale(conf)
             prediction = 0.5 * (output +  z[0][1])
             lo = self.lf(prediction, torch.Tensor([reward]))
             lo.backward()
             self.opt.step()
             self.opt.zero_grad()
+            self.opt_scale.zero_grad()
 
 
         # We skip for now. Alternatively we could
