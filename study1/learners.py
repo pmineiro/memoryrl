@@ -13,6 +13,8 @@ from torch import optim
 
 from memory import CMT
 
+bits = 13
+
 class MemorizedLearner_1:
     class LogisticModel:
         def __init__(self, *args, **kwargs):
@@ -23,9 +25,9 @@ class MemorizedLearner_1:
                 from os import devnull
                 from coba import tools
 
-                with open(devnull, 'w') as f, tools.redirect_stderr(f):
-                    from vowpalwabbit import pyvw
-                    self.vw = pyvw.vw('--quiet -b 16 --loss_function logistic --link=glf1 -q ax --cubic axx')
+                #with open(devnull, 'w') as f, tools.redirect_stderr(f):
+                from vowpalwabbit import pyvw
+                self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --link=glf1 -q ax --cubic axx')
 
         def predict(self, xraw):
             self.incorporate()
@@ -61,7 +63,7 @@ class MemorizedLearner_1:
             if self.vw is None:
                 from vowpalwabbit import pyvw
 
-                self.vw = pyvw.vw('--quiet -b 16 --noconstant --loss_function logistic -qxx --link=glf1')
+                self.vw = pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic -qxx --link=glf1')
 
         def predict(self, xraw, z):
             self.incorporate()
@@ -197,8 +199,8 @@ class ResidualLearner_1:
         from coba import tools
         from vowpalwabbit import pyvw
 
-        with open(devnull, 'w') as f, tools.redirect_stderr(f):
-            self.vw = pyvw.vw(f'--quiet --cb_adf -q sa --cubic ssa --ignore_linear s --learning_rate {self._learning_rate}')
+        #with open(devnull, 'w') as f, tools.redirect_stderr(f):
+        self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s --learning_rate {self._learning_rate}')
         
         self.memory.init()
 
@@ -297,8 +299,8 @@ class ResidualLearner_2:
         from coba import tools
         from vowpalwabbit import pyvw
 
-        with open(devnull, 'w') as f, tools.redirect_stderr(f):
-            self.vw = pyvw.vw(f'--quiet --cb_adf -q sa --cubic ssa --ignore_linear s --learning_rate {self._learning_rate}')
+        #with open(devnull, 'w') as f, tools.redirect_stderr(f):
+        self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s --learning_rate {self._learning_rate}')
         
         self.memory.init()
 
@@ -442,11 +444,11 @@ class JordanLogisticLearner:
         def incorporate(self):
             if self.vw is None:
                 from os import devnull
-                from coba import execution
+                from coba import tools
 
-                with open(devnull, 'w') as f, execution.redirect_stderr(f):
-                    from vowpalwabbit import pyvw
-                    self.vw = pyvw.vw('--quiet -b 20 --loss_function logistic -q ax --cubic axx --ignore_linear x --coin')
+                #with open(devnull, 'w') as f, tools.redirect_stderr(f):
+                from vowpalwabbit import pyvw
+                self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic -q ax --cubic axx --ignore_linear x --coin')
 
         def predict(self, xraw):
             self.incorporate()
@@ -503,7 +505,7 @@ class JordanLogisticLearner:
             if self.vw is None:
                 from vowpalwabbit import pyvw
 
-                self.vw = pyvw.vw('--quiet -b 20 --noconstant --loss_function logistic --coin')
+                self.vw = pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic --coin')
 
         def predict(self, xraw, z):
             self.incorporate()
@@ -787,9 +789,9 @@ class JordanVowpalLearner:
                 from os import devnull
                 from coba import execution
 
-                with open(devnull, 'w') as f, execution.redirect_stderr(f):
-                    from vowpalwabbit import pyvw
-                    self.vw = pyvw.vw('--quiet -b 20 --loss_function logistic -q ax --cubic axx --ignore_linear x --coin')
+                #with open(devnull, 'w') as f, execution.redirect_stderr(f):
+                from vowpalwabbit import pyvw
+                self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic -q ax --cubic axx --ignore_linear x --coin')
 
         def predict(self, xraw):
             self.incorporate()
@@ -846,7 +848,7 @@ class JordanVowpalLearner:
             if self.vw is None:
                 from vowpalwabbit import pyvw
 
-                self.vw = pyvw.vw('--quiet -b 20 --noconstant --loss_function logistic --coin')
+                self.vw = pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic --coin')
 
         def predict(self, xraw, z):
             self.incorporate()
