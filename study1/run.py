@@ -4,7 +4,7 @@ from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner, UcbBanditLearner, CorralLearner
 from coba.simulations import OpenmlSimulation
 
-experiment       = "test"
+experiment       = "medish"
 processes        = 1
 maxtasksperchild = None
 seed             = 10
