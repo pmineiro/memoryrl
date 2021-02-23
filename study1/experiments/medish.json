@@ -1,0 +1,12 @@
+{
+    "variables": {
+        "$openmls" : { "OpenmlSimulation": [1471,180,184,6,155,1503,1459,40985,42468,1483,1044,32], "method": "foreach" },
+        "$shuffles": { "Shuffle"         : [111,222,333]                                          , "method": "foreach" },
+        "$take"    : { "Take"            : 10000                                                                        }
+    },
+    "simulations": [
+        ["$openmls",              "$shuffles" , "$take" ],
+        ["$openmls", "PCA", { "Sort": [[0]] } , "$take" ],
+        ["$openmls", "PCA", { "Sort": [[1]] } , "$take" ]
+    ]
+}

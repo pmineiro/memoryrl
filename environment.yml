@@ -1,0 +1,17 @@
+name: memoryrl
+channels:
+  - pytorch
+  - defaults
+dependencies:
+    - python=3.6.*
+    - pip=21.0.*
+    - pytorch=1.7.1
+    - cpuonly
+    - pip:
+        - numpy
+        - pandas
+        - matplotlib
+        - notebook
+        - vowpalwabbit
+        - sklearn
+        - coba==2.0.*

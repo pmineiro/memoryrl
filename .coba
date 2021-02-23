@@ -1,0 +1,5 @@
+{
+    "api_keys" : { "openml": null },
+    "cacher"   : { "DiskCacher": "~/.coba_cache/" },
+    "benchmark": { "processes": 3, "maxtasksperchild": null }
+}
