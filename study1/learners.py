@@ -207,6 +207,7 @@ class MemorizedLearner_1:
         self._random       = random.Random(31337)
         self._probs        = {}
         self._update       = {}
+        self._i            = 0
 
     def init(self):
         scorer      = MemorizedLearner_1.MarkLearnedEuclideanDistance()
@@ -225,6 +226,9 @@ class MemorizedLearner_1:
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
 
+        predict_start = time.time()
+        self._i += 1
+
         (greedy_r, greedy_a) = -math.inf, actions[0]
 
         for action in actions:
@@ -235,6 +239,9 @@ class MemorizedLearner_1:
 
         ga = actions.index(greedy_a)
         minp = self._epsilon / len(actions)
+
+        if self._i % 200 == 0:
+            print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
 
         if self._random.random() < self._epsilon:
             ra = self._random.randint(0,len(actions)-1)
@@ -248,6 +255,8 @@ class MemorizedLearner_1:
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""
+
+        learn_start = time.time()
 
         x = self.flat(context,action)
 
@@ -272,6 +281,9 @@ class MemorizedLearner_1:
             self._mem.delete(x)
         self._mem.insert(x, reward)
 
+        if self._i % 200 == 0:
+            print(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
+
     def flat(self, context, action):
         if isinstance(context,dict):
             return (tuple(context.items()), action)
@@ -285,6 +297,7 @@ class ResidualLearner_1:
         self._random = random.Random(0xdeadbeef)
         self._probs = {}
         self._learning_rate = learning_rate
+        self._i = 0
         
         self.memory = MemorizedLearner_1(0.0, self._max_memories)
 
@@ -295,7 +308,6 @@ class ResidualLearner_1:
         self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s --learning_rate {self._learning_rate}')
         
         self.memory.init()
-        self.i = 0
 
     @property
     def family(self) -> str:
@@ -326,18 +338,15 @@ class ResidualLearner_1:
 
         predict_start = time.time()
 
-        self.i += 1
+        self._i += 1
         exstr = self.toadf(context, actions)
         predict = self.vw.predict(exstr)
         deltas = []
 
-        query_start = time.time()
         for n, action in enumerate(actions):
             mq = self.memory.flat(context, action)
             (_, z) = self.memory._mem.query(mq, 1, 0)
             deltas.append(z[0][1] if len(z) > 0 else 0)
-
-        print(f"{self.i}. query time {round(time.time()-query_start, 2)}")
 
         ga = min(((p + dp, n)
                  for p, dp, n in zip(predict, deltas, range(len(actions))))
@@ -354,7 +363,8 @@ class ResidualLearner_1:
             self._probs[key] = (p, minp, ga, predict[ga], actions)
             prediction = [ float(i==ga) for i in range(len(actions))]
 
-        print(f"{self.i}. prediction time {round(time.time()-predict_start, 2)}")
+        if self._i % 200 == 0:
+            print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
 
         return prediction
 
@@ -395,7 +405,8 @@ class ResidualLearner_1:
         
         self.memory._mem.insert(x, obs_resid)
 
-        print(f"{self.i}. learn time {round(time.time()-learn_start, 2)}")
+        if self._i % 200 == 0:
+            print(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
 
 class ResidualLearner_2:
     def __init__(self, epsilon: float, max_memories: int, learning_rate:float = 0.5):
