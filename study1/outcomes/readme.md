@@ -1,0 +1,1 @@
+This folder exists to collect transaction logs from local runs of the benchmark experiments.

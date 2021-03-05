@@ -1,6 +1,8 @@
+import time
 import random
 import math
 
+from collections import defaultdict
 from typing import Hashable, Sequence, Dict, Any
 
 import numpy as np
@@ -105,6 +107,95 @@ class MemorizedLearner_1:
 
                 ex = f'1 {r} {initial} |x ' + ' '.join([f'{n+1}:{v*v-vp*vp}' for n, (v, vp) in enumerate(zip(dxa, dxap))])
 
+    class MarkLearnedEuclideanDistance:
+        def __init__(self, *args, **kwargs):
+            self.vw = None
+
+        def incorporate(self):
+            if self.vw is None:
+                from vowpalwabbit import pyvw
+
+                self.vw = pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic --interactions xxa --link=glf1')
+
+        def predict(self, xraw, z):
+            self.incorporate()
+
+            import numpy as np
+
+            xprimeraw = z[0]
+
+            (x     , a     ) = xraw
+            (xprime, aprime) = xprimeraw
+
+            if isinstance(x[0],tuple):
+                x      = defaultdict(int,x)
+                xprime = defaultdict(int,xprime)
+            else:
+                x      = defaultdict(int,enumerate(x))
+                xprime = defaultdict(int,enumerate(xprime))
+
+            keys = set(list(x.keys()) + list(xprime.keys()))
+
+            dx = { key:x[key]-xprime[key] for key in keys }
+            da = np.hstack(a) - np.hstack(aprime)
+
+            #we've gotten rid of the interaction terms. In practice though these only matter if a==aprime
+            if a == aprime:
+                dxa_dot_dxa = sum([2*dx[key]*dx[key] for key in keys])
+            else:
+                dxa_dot_dxa = sum([dx[key]*dx[key] for key in keys]) + sum([x[key]*x[key] for key in keys]) + sum([xprime[key]*xprime[key] for key in keys])
+        
+            initial = -0.01 * dxa_dot_dxa
+
+            ex = ' |x ' + ' '.join([f'{n+1}:{v*v}' for n, v in dx.items() if v != 0]) + ' |a ' + ' '.join(map(str,da))
+
+            #if abs(initial - MemorizedLearner_1.LearnedEuclideanDistance().predict( xraw, z)) > .1:
+            #    raise print(f"Broken! ({abs(initial - MemorizedLearner_1.LearnedEuclideanDistance().predict( xraw, z))})")
+
+            return initial + self.vw.predict(ex)
+
+        def update(self, xraw, z, r):
+            self.incorporate()
+
+            import numpy as np
+
+            if r > 0 and len(z) > 1:
+                (x     , a     ) = xraw
+                (xprime, aprime) = z[0][0]
+                (xpp   , app   ) = z[1][0]
+                
+                if isinstance(x[0],tuple):
+                    x      = defaultdict(int,x)
+                    xprime = defaultdict(int,xprime)
+                    xpp    = defaultdict(int,xpp)
+                else:
+                    x      = defaultdict(int,enumerate(x))
+                    xprime = defaultdict(int,enumerate(xprime))
+                    xpp    = defaultdict(int,enumerate(xpp))
+
+                keys = set(list(x.keys()) + list(xprime.keys()) + list(xpp.keys()))
+
+                dx = { key:x[key]-xprime[key] for key in keys }
+                da = np.hstack(a) - np.hstack(aprime)
+
+                dxp = { key:x[key]-xpp[key] for key in keys }
+                dap  = np.hstack(a) - np.hstack(app)
+
+                if a == aprime:
+                    dxa_dot_dxa = sum([2*dx[key]*dx[key] for key in keys])
+                else:
+                    dxa_dot_dxa = sum([dx[key]*dx[key] for key in keys]) + sum([x[key]*x[key] for key in keys]) + sum([xprime[key]*xprime[key] for key in keys])
+
+                if a == app:
+                    dxap_dot_dxap = sum([2*dxp[key]*dxp[key] for key in keys])
+                else:
+                    dxap_dot_dxap = sum([dxp[key]*dxp[key] for key in keys]) + sum([x[key]*x[key] for key in keys]) + sum([xpp[key]*xpp[key] for key in keys])
+
+                initial = 0.01 * (dxa_dot_dxa - dxap_dot_dxap)
+
+                ex = f'1 {r} {initial} |x ' + ' '.join([f'{k+1}:{dx[k]**2-dxp[k]**2}' for k in keys if dx[k]**2-dxp[k]**2 != 0 ]) + ' |a ' + ' '.join(map(str,da-dap))
+                #self.vw.learn(ex)
+
     @staticmethod
     def routerFactory():
         return MemorizedLearner_1.LogisticModel(eta0=1e-2)
@@ -118,7 +209,7 @@ class MemorizedLearner_1:
         self._update       = {}
 
     def init(self):
-        scorer      = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-2)
+        scorer      = MemorizedLearner_1.MarkLearnedEuclideanDistance()
         randomState = random.Random(45)
         ords        = random.Random(2112)
         self._mem   = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=40, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
@@ -182,7 +273,10 @@ class MemorizedLearner_1:
         self._mem.insert(x, reward)
 
     def flat(self, context, action):
-        return (context, action)
+        if isinstance(context,dict):
+            return (tuple(context.items()), action)
+        else:
+            return (context, action)
 
 class ResidualLearner_1:
     def __init__(self, epsilon: float, max_memories: int, learning_rate:float = 0.5):
@@ -195,14 +289,13 @@ class ResidualLearner_1:
         self.memory = MemorizedLearner_1(0.0, self._max_memories)
 
     def init(self):
-        from os import devnull
-        from coba import tools
         from vowpalwabbit import pyvw
 
         #with open(devnull, 'w') as f, tools.redirect_stderr(f):
         self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s --learning_rate {self._learning_rate}')
         
         self.memory.init()
+        self.i = 0
 
     @property
     def family(self) -> str:
@@ -213,11 +306,16 @@ class ResidualLearner_1:
         return {'e':self._epsilon, 'm': self._max_memories, 'l': self._learning_rate}
 
     def toadf(self, context, actions, label=None):
-        assert type(context) is tuple, context
+        assert isinstance(context, (tuple, dict))
+
+        if isinstance(context, tuple):
+            context_dict = dict(enumerate(context))
+        else:
+            context_dict = context
 
         return '\n'.join([
-          'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(context) ]),
-          ] + [
+        'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in context_dict.items() ]),
+        ] + [
             f'{dacost} |a ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(a) if v != 0 ])
             for n, a in enumerate(actions)
             for dacost in ((f'0:{label[1]}:{label[2]}' if label is not None and n == label[0] else ''),)
@@ -226,14 +324,20 @@ class ResidualLearner_1:
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
 
+        predict_start = time.time()
+
+        self.i += 1
         exstr = self.toadf(context, actions)
         predict = self.vw.predict(exstr)
         deltas = []
 
+        query_start = time.time()
         for n, action in enumerate(actions):
             mq = self.memory.flat(context, action)
             (_, z) = self.memory._mem.query(mq, 1, 0)
             deltas.append(z[0][1] if len(z) > 0 else 0)
+
+        print(f"{self.i}. query time {round(time.time()-query_start, 2)}")
 
         ga = min(((p + dp, n)
                  for p, dp, n in zip(predict, deltas, range(len(actions))))
@@ -244,15 +348,22 @@ class ResidualLearner_1:
             ra = self._random.randint(0, len(actions)-1)
             p = 1.0 - self._epsilon + minp if ra == ga else minp
             self._probs[key] = (p, minp, ra, predict[ra], actions)
-            return [ float(i == ra) for i in range(len(actions)) ]
+            prediction = [ float(i == ra) for i in range(len(actions)) ]
         else:
             p = 1.0 - self._epsilon + minp
             self._probs[key] = (p, minp, ga, predict[ga], actions)
-            return [ float(i==ga) for i in range(len(actions))]
+            prediction = [ float(i==ga) for i in range(len(actions))]
+
+        print(f"{self.i}. prediction time {round(time.time()-predict_start, 2)}")
+
+        return prediction
+
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""
 
+        learn_start = time.time()
+        
         (prob, minp, aind, prd_loss, actions) = self._probs.pop(key)
 
         obs_loss  = -reward
@@ -284,6 +395,8 @@ class ResidualLearner_1:
         
         self.memory._mem.insert(x, obs_resid)
 
+        print(f"{self.i}. learn time {round(time.time()-learn_start, 2)}")
+
 class ResidualLearner_2:
     def __init__(self, epsilon: float, max_memories: int, learning_rate:float = 0.5):
         self._epsilon = epsilon
@@ -313,11 +426,16 @@ class ResidualLearner_2:
         return {'e':self._epsilon, 'm': self._max_memories}
 
     def toadf(self, context, actions, label=None):
-        assert type(context) is tuple, context
+        assert isinstance(context, (tuple, dict))
+
+        if isinstance(context, tuple):
+            context_dict = dict(enumerate(context))
+        else:
+            context_dict = context
 
         return '\n'.join([
-          'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(context) ]),
-          ] + [
+        'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in context_dict.items() ]),
+        ] + [
             f'{dacost} |a ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(a) if v != 0 ])
             for n, a in enumerate(actions)
             for dacost in ((f'0:{label[1]}:{label[2]}' if label is not None and n == label[0] else ''),)
