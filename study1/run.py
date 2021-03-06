@@ -1,23 +1,26 @@
-from learners import ResidualLearner_1, ResidualLearner_2, JordanLogisticLearner, JordanVowpalLearner
+from learners import ResidualLearner_1, ResidualLearner_2, JordanLogisticLearner, JordanVowpalLearner, MemorizedLearner_1
+from sources import MediamillSource
 
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner, UcbBanditLearner, CorralLearner
+from coba.tools import CobaRegistry
 
-experiment       = "medish"
-processes        = 2
+CobaRegistry.register("Mediamill", MediamillSource)
+
+experiment       = "test"
+processes        = 1
 maxtasksperchild = None
 seed             = 10
-ignore_raise     = True
+ignore_raise     = False
 
 json = f"./study1/experiments/{experiment}.json"
 log  = f"./study1/outcomes/{experiment}.log"
 
 learners = [
-    JordanVowpalLearner(0.1, 0.1, 200),
-    JordanVowpalLearner(0.1, 1, 200),
     ResidualLearner_1(0.1, 200),
-    VowpalLearner(epsilon=0.1, seed=seed),
+    MemorizedLearner_1(0.1, 200),
     UcbBanditLearner(),
+    VowpalLearner(epsilon=0.1, seed=seed),
     CorralLearner([ResidualLearner_2(0.1, 200), VowpalLearner(epsilon=0.1,seed=seed)], eta=.075, T=4000)
 ]
 

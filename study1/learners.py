@@ -221,7 +221,7 @@ class MemorizedLearner_1:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return {'e':self._epsilon, 'm': self._max_memories}
+        return {'e':self._epsilon, 'm': self._max_memories, 'b': bits}
 
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -291,12 +291,11 @@ class MemorizedLearner_1:
             return (context, action)
 
 class ResidualLearner_1:
-    def __init__(self, epsilon: float, max_memories: int, learning_rate:float = 0.5):
+    def __init__(self, epsilon: float, max_memories: int):
         self._epsilon = epsilon
         self._max_memories = max_memories
         self._random = random.Random(0xdeadbeef)
         self._probs = {}
-        self._learning_rate = learning_rate
         self._i = 0
         
         self.memory = MemorizedLearner_1(0.0, self._max_memories)
@@ -305,7 +304,7 @@ class ResidualLearner_1:
         from vowpalwabbit import pyvw
 
         #with open(devnull, 'w') as f, tools.redirect_stderr(f):
-        self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s --learning_rate {self._learning_rate}')
+        self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s')
         
         self.memory.init()
 
@@ -315,7 +314,7 @@ class ResidualLearner_1:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return {'e':self._epsilon, 'm': self._max_memories, 'l': self._learning_rate}
+        return {'e':self._epsilon, 'm': self._max_memories, 'b': bits}
 
     def toadf(self, context, actions, label=None):
         assert isinstance(context, (tuple, dict))
@@ -337,8 +336,8 @@ class ResidualLearner_1:
         """Choose which action index to take."""
 
         predict_start = time.time()
-
         self._i += 1
+
         exstr = self.toadf(context, actions)
         predict = self.vw.predict(exstr)
         deltas = []
@@ -409,12 +408,12 @@ class ResidualLearner_1:
             print(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
 
 class ResidualLearner_2:
-    def __init__(self, epsilon: float, max_memories: int, learning_rate:float = 0.5):
+    def __init__(self, epsilon: float, max_memories: int):
         self._epsilon = epsilon
         self._max_memories = max_memories
         self._random = random.Random(0xdeadbeef)
         self._probs = {}
-        self._learning_rate = learning_rate
+        self._i     = 0
 
         self.memory = MemorizedLearner_1(0.0, self._max_memories)
 
@@ -424,7 +423,7 @@ class ResidualLearner_2:
         from vowpalwabbit import pyvw
 
         #with open(devnull, 'w') as f, tools.redirect_stderr(f):
-        self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s --learning_rate {self._learning_rate}')
+        self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s')
         
         self.memory.init()
 
@@ -434,7 +433,7 @@ class ResidualLearner_2:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return {'e':self._epsilon, 'm': self._max_memories}
+        return {'e':self._epsilon, 'm': self._max_memories, 'b': bits}
 
     def toadf(self, context, actions, label=None):
         assert isinstance(context, (tuple, dict))
@@ -455,6 +454,9 @@ class ResidualLearner_2:
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
 
+        predict_start = time.time()
+        self._i += 1
+
         exstr = self.toadf(context, actions)
         predict = self.vw.predict(exstr)
         deltas = []
@@ -469,6 +471,9 @@ class ResidualLearner_2:
                 )[1]
         minp = self._epsilon / len(actions)
 
+        if self._i % 200 == 0:
+            print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
+
         if self._random.random() < self._epsilon:
             ra = self._random.randint(0, len(actions)-1)
             p = 1.0 - self._epsilon + minp if ra == ga else minp
@@ -481,6 +486,8 @@ class ResidualLearner_2:
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""
+
+        learn_start = time.time()
 
         (prob, minp, aind, prd_loss, actions) = self._probs.pop(key)
 
@@ -513,6 +520,9 @@ class ResidualLearner_2:
             self.memory._mem.delete(x)
 
         self.memory._mem.insert(x, obs_resid)
+
+        if self._i % 200 == 0:
+            print(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
 
 class JordanLogisticLearner:
     class LogisticRegressor(torch.nn.Module):
@@ -775,7 +785,7 @@ class JordanLogisticLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return {'e':self._epsilon, 'm': self._max_memories, 'l': self._lr}
+        return {'e':self._epsilon, 'm': self._max_memories, 'l': self._lr, 'b': bits}
 
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -1118,7 +1128,7 @@ class JordanVowpalLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return {'e':self._epsilon, 'm': self._max_memories, 'l': self._lr}
+        return {'e':self._epsilon, 'm': self._max_memories, 'l': self._lr, 'b': bits}
 
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
