@@ -1,8 +1,8 @@
 {
     "variables": {
-        "$mediamill" : { "Mediamill": "./study1/datasets/Mediamill_data.txt"               },
-        "$shuffles"  : { "Shuffle"  : [111,222,333]                  , "method": "foreach" },
-        "$take"      : { "Take"     : 100                                                 }
+        "$mediamill" : { "Mediamill": "./study1/datasets/Mediamill_data.txt"                      },
+        "$shuffles"  : { "Shuffle"  : [111,222,333]                         , "method": "foreach" },
+        "$take"      : { "Take"     : 2500                                                        }
     },
     "simulations": [
         ["$mediamill", "$shuffles", "$take" ]

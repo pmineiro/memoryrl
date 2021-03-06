@@ -241,7 +241,7 @@ class MemorizedLearner_1:
         minp = self._epsilon / len(actions)
 
         if logn and self._i % logn == 0:
-           CobaConfig.Logger.log(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
+           print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
 
         if self._random.random() < self._epsilon:
             ra = self._random.randint(0,len(actions)-1)
@@ -282,7 +282,7 @@ class MemorizedLearner_1:
         self._mem.insert(x, reward)
 
         if logn and self._i % logn == 0:
-            CobaConfig.Logger.log(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
+            print(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
 
     def flat(self, context, action):
         if isinstance(context,dict):
@@ -363,7 +363,7 @@ class ResidualLearner_1:
             prediction = [ float(i==ga) for i in range(len(actions))]
 
         if logn and self._i % logn == 0:
-            CobaConfig.Logger.log(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
+            print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
 
         return prediction
 
@@ -405,7 +405,7 @@ class ResidualLearner_1:
         self.memory._mem.insert(x, obs_resid)
 
         if logn and self._i % logn == 0:
-            CobaConfig.Logger.log(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
+            print(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
 
 class ResidualLearner_2:
     def __init__(self, epsilon: float, max_memories: int):
@@ -472,7 +472,7 @@ class ResidualLearner_2:
         minp = self._epsilon / len(actions)
 
         if logn and self._i % logn == 0:
-            CobaConfig.Logger.log(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
+            print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
 
         if self._random.random() < self._epsilon:
             ra = self._random.randint(0, len(actions)-1)
@@ -522,7 +522,7 @@ class ResidualLearner_2:
         self.memory._mem.insert(x, obs_resid)
 
         if logn and self._i % logn == 0:
-            CobaConfig.Logger.log(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
+            print(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
 
 class JordanLogisticLearner:
     class LogisticRegressor(torch.nn.Module):

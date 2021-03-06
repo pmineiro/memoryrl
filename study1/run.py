@@ -7,8 +7,8 @@ from coba.tools import CobaRegistry
 
 CobaRegistry.register("Mediamill", MediamillSource)
 
-experiment       = "test"
-processes        = 1
+experiment       = "media"
+processes        = None
 maxtasksperchild = None
 seed             = 10
 ignore_raise     = False

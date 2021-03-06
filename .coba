@@ -1,5 +1,6 @@
 {
     "api_keys" : { "openml": null },
     "cacher"   : { "DiskCacher": "~/.coba_cache/" },
-    "benchmark": { "processes": 3, "maxtasksperchild": null }
+    "logger"   : { "IndentLogger": "ConsoleSink" },
+    "benchmark": { "processes": 1, "maxtasksperchild": null, "group_by":"none" }
 }
