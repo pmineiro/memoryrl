@@ -2,7 +2,7 @@ import time
 import random
 import math
 
-from collections import defaultdict
+from itertools import count
 from typing import Hashable, Sequence, Dict, Any
 
 import numpy as np
@@ -13,12 +13,10 @@ from sklearn import linear_model
 from torch import nn
 from torch import optim
 
-from coba.tools import CobaConfig
-
 from memory import CMT
 
 logn = None
-bits = 13
+bits = 20
 
 class MemorizedLearner_1:
     class LogisticModel:
@@ -109,19 +107,47 @@ class MemorizedLearner_1:
                 initial = 0.01 * (dxa.dot(dxa) - dxap.dot(dxap))
 
                 ex = f'1 {r} {initial} |x ' + ' '.join([f'{n+1}:{v*v-vp*vp}' for n, (v, vp) in enumerate(zip(dxa, dxap))])
+                self.vw.learn(ex)
 
     class MarkLearnedEuclideanDistance:
         def __init__(self, *args, **kwargs):
             self.vw = None
 
+            self.tt = [0]*6
+
         def incorporate(self):
             if self.vw is None:
                 from vowpalwabbit import pyvw
-
                 self.vw = pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic --interactions xxa --link=glf1')
 
-        def predict(self, xraw, z):
+        def outer(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> Dict[str,float]:
+            return { key1+'_'+key2: val1*val2 for key1,val1 in vec1.items() for key2,val2 in vec2.items() }
+
+        def diff(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> Dict[str,float]:
+            
+            diff = {}
+            
+            for key in set(vec1.keys()) | set(vec2.keys()):
+                if key in vec1 and key in vec2:
+                    diff[key] = vec1[key]-vec2[key]
+                elif key in vec1:
+                    diff[key] = vec1[key]
+                else:
+                    diff[key] = -vec2[key]
+
+            return diff
+
+        def inner(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> float:
+
+            keys = set(vec1.keys()) & set(vec2.keys())
+
+            return sum([ vec1[key]*vec2[key] for key in keys ])
+
+        def predict(self, xraw, z):            
             self.incorporate()
+
+            ss = [0]*6
+            ee = [0]*6
 
             import numpy as np
 
@@ -130,29 +156,54 @@ class MemorizedLearner_1:
             (x     , a     ) = xraw
             (xprime, aprime) = xprimeraw
 
-            if isinstance(x[0],tuple):
-                x      = defaultdict(int,x)
-                xprime = defaultdict(int,xprime)
-            else:
-                x      = defaultdict(int,enumerate(x))
-                xprime = defaultdict(int,enumerate(xprime))
+            ss[0] = time.time()
+            if not isinstance(x[0],tuple):
+                x      = enumerate(x)
+                xprime = enumerate(xprime)
 
-            keys = set(list(x.keys()) + list(xprime.keys()))
+            if not isinstance(a[0],tuple):
+                a      = enumerate(a)
+                aprime = enumerate(aprime)
 
-            dx = { key:x[key]-xprime[key] for key in keys }
-            da = np.hstack(a) - np.hstack(aprime)
+            x      = { "x"+str(key):value for key,value in x if value != 0}
+            a      = { "a"+str(key):value for key,value in a if value != 0 }
 
-            #we've gotten rid of the interaction terms. In practice though these only matter if a==aprime
-            if a == aprime:
-                dxa_dot_dxa = sum([2*dx[key]*dx[key] for key in keys])
-            else:
-                dxa_dot_dxa = sum([dx[key]*dx[key] for key in keys]) + sum([x[key]*x[key] for key in keys]) + sum([xprime[key]*xprime[key] for key in keys])
-        
-            initial = -0.01 * dxa_dot_dxa
+            xprime = { "x"+str(key):value for key,value in xprime if value != 0}
+            aprime = { "a"+str(key):value for key,value in aprime if value != 0 }
+            ee[0] = time.time()
 
-            ex = ' |x ' + ' '.join([f'{n+1}:{v*v}' for n, v in dx.items() if v != 0]) + ' |a ' + ' '.join(map(str,da))
+            ss[1] = time.time()
+            xa      = {**x, **a, **self.outer(x,a) }
+            xaprime = {**xprime, **aprime, **self.outer(xprime,aprime) }
+            ee[1] = time.time()
 
-            return initial + self.vw.predict(ex)
+            ss[2] = time.time()
+            dxa = self.diff(xa,xaprime)
+            ee[2] = time.time()
+            
+            ss[3] = time.time()
+            dxa_dot_dxa = self.inner(dxa, dxa)                            
+            ee[3] = time.time()
+
+            # ss[4] = time.time()
+            # if a == aprime:
+            #     dxa_dot_dxa = 2*sum([x[key]**2 + xprime[key]**2 - 2*x[key]*xprime[key] for key in keys])
+            # else:
+            #     dxa_dot_dxa = 2*sum([x[key]**2 + xprime[key]**2 - x[key]*xprime[key] for key in keys])
+            # ee[4] = time.time()
+
+            ss[4] = time.time()
+            ex = f' |x ' + ' '.join([f'{k}:{round(v*v,6)}' for k,v in dxa.items()])
+            v = -0.01 * dxa_dot_dxa + self.vw.predict(ex)
+            ee[4] = time.time()
+
+            for i,s,e in zip(count(),ss,ee):
+                self.tt[i] += e-s
+
+            #this assert statement can only be used when the data set is dense
+            #assert abs(v - MemorizedLearner_1.LearnedEuclideanDistance().predict(xraw, z)) <= .1
+
+            return v
 
         def update(self, xraw, z, r):
             self.incorporate()
@@ -164,37 +215,38 @@ class MemorizedLearner_1:
                 (xprime, aprime) = z[0][0]
                 (xpp   , app   ) = z[1][0]
                 
-                if isinstance(x[0],tuple):
-                    x      = defaultdict(int,x)
-                    xprime = defaultdict(int,xprime)
-                    xpp    = defaultdict(int,xpp)
-                else:
-                    x      = defaultdict(int,enumerate(x))
-                    xprime = defaultdict(int,enumerate(xprime))
-                    xpp    = defaultdict(int,enumerate(xpp))
+                if not isinstance(x[0],tuple):
+                    x      = enumerate(x)
+                    xprime = enumerate(xprime)
+                    xpp    = enumerate(xpp)
 
-                keys = set(list(x.keys()) + list(xprime.keys()) + list(xpp.keys()))
+                if not isinstance(a[0],tuple):
+                    a      = enumerate(a)
+                    aprime = enumerate(aprime)
+                    app    = enumerate(app)
 
-                dx = { key:x[key]-xprime[key] for key in keys }
-                da = np.hstack(a) - np.hstack(aprime)
+                x      = { "x"+str(key):value for key,value in x if value != 0 }
+                a      = { "a"+str(key):value for key,value in a if value != 0 }
 
-                dxp = { key:x[key]-xpp[key] for key in keys }
-                dap  = np.hstack(a) - np.hstack(app)
+                xprime = { "x"+str(key):value for key,value in xprime if value != 0 }
+                aprime = { "a"+str(key):value for key,value in aprime if value != 0 }
 
-                if a == aprime:
-                    dxa_dot_dxa = sum([2*dx[key]*dx[key] for key in keys])
-                else:
-                    dxa_dot_dxa = sum([dx[key]*dx[key] for key in keys]) + sum([x[key]*x[key] for key in keys]) + sum([xprime[key]*xprime[key] for key in keys])
+                xpp = { "x"+str(key):value for key,value in xpp if value != 0 }
+                app = { "a"+str(key):value for key,value in app if value != 0 }
 
-                if a == app:
-                    dxap_dot_dxap = sum([2*dxp[key]*dxp[key] for key in keys])
-                else:
-                    dxap_dot_dxap = sum([dxp[key]*dxp[key] for key in keys]) + sum([x[key]*x[key] for key in keys]) + sum([xpp[key]*xpp[key] for key in keys])
+                xa      = {**x, **a, **self.outer(x,a) }
+                xaprime = {**xprime, **aprime, **self.outer(xprime,aprime) }
+                xapp    = {**xpp, **app, **self.outer(xpp,app) }
 
-                initial = 0.01 * (dxa_dot_dxa - dxap_dot_dxap)
+                dxa  = self.diff(xa, xaprime)
+                dxap = self.diff(xa, xapp)
 
-                ex = f'1 {r} {initial} |x ' + ' '.join([f'{k+1}:{dx[k]**2-dxp[k]**2}' for k in keys if dx[k]**2-dxp[k]**2 != 0 ]) + ' |a ' + ' '.join(map(str,da-dap))
-                #self.vw.learn(ex)
+                initial = 0.01 * (self.inner(dxa,dxa) - self.inner(dxap,dxap))
+
+                keys = set(dxa.keys()) & set(dxap.keys())
+
+                ex = f'1 {r} {initial} |x ' + ' '.join([f'{key}:{round(dxa[key]**2-dxap[key]**2,6)}' for key in keys])
+                self.vw.learn(ex)
 
     @staticmethod
     def routerFactory():
