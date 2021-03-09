@@ -7,7 +7,7 @@ from coba.tools import CobaRegistry
 
 CobaRegistry.register("Mediamill", MediamillSource)
 
-experiment       = "media"
+experiment       = "all"
 processes        = None
 maxtasksperchild = None
 seed             = 10
@@ -19,6 +19,7 @@ log  = f"./study1/outcomes/{experiment}.log"
 learners = [
     ResidualLearner_1(0.1, 200),
     MemorizedLearner_1(0.1, 200),
+    MemorizedLearner_1(0.1, 400),
     UcbBanditLearner(),
     VowpalLearner(epsilon=0.1, seed=seed),
     CorralLearner([ResidualLearner_2(0.1, 200), VowpalLearner(epsilon=0.1,seed=seed)], eta=.075, T=4000)
