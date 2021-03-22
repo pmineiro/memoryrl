@@ -1,3 +1,3 @@
 {
-    "simulations": [ [ { "OpenmlSimulation": [1471,180,184,6,155,1503,1459,40985,42468,1483,1044,32], "method":"foreach" }, "PCA", {"Take": 100 }] ]
+    "simulations": [ [ { "OpenmlSimulation": [1471,180,184,6,155,1503,1459,40985,42468,1483,1044,32], "method":"foreach" }, "PCA", {"Take": 20 }] ]
 }
