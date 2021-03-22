@@ -1,9 +1,12 @@
 
+from collections import Counter
+from itertools import chain, compress
 from typing import List, Sequence, Dict
 
 from coba.data.encoders import OneHotEncoder
 from coba.data.sources import Source
 from coba.simulations import Interaction, Reward, Simulation, MemorySimulation
+from coba.random import CobaRandom
 
 class MultiLabelReward(Reward):
 
@@ -20,14 +23,15 @@ class MultiLabelReward(Reward):
 
 class MediamillSource(Source[Simulation]):
 
-    def __init__(self, filename:str) -> None:
+    def __init__(self, filename:str, balance=True) -> None:
 
         self._filename = filename
+        self._balance = balance
 
     def read(self) -> Simulation:
 
-        interactions: List[Interaction] = []
-        labels      : Dict[int, Sequence[int]] = {}
+        interactions       : List[Interaction] = []
+        interactions_labels: Dict[int, Sequence[int]] = {}
 
         with open(self._filename) as fs:
             
@@ -46,9 +50,24 @@ class MediamillSource(Source[Simulation]):
                 example_features = { int(item.split(":")[0]):float(item.split(":")[1]) for item in items[1:] }
 
                 interactions.append(Interaction(example_features, actions, i))
-                labels[i] = example_labels
+                interactions_labels[i] = example_labels
 
-        return MemorySimulation(interactions, MultiLabelReward(labels))
+        if self._balance:
+
+            random = CobaRandom(1337)
+
+            label_counts = Counter([l.index(1) for l in chain.from_iterable(interactions_labels.values())])
+            top_6 = [k for k, v in sorted(label_counts.items(), key=lambda i: i[1], reverse=True)][0:6]
+
+            for interaction in interactions:
+                interactions_labels[interaction.key] = [ l for l in interactions_labels[interaction.key] if l.index(1) not in top_6 ]
+
+            interactions = [i for i in interactions if interactions_labels[i.key]]
+
+            for interaction in interactions:
+                interactions_labels[interaction.key] = [random.choice(interactions_labels[interaction.key])]
+
+        return MemorySimulation(interactions, MultiLabelReward(interactions_labels))
     
     def __repr__(self):
         return "Mediamill"

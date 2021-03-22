@@ -25,10 +25,6 @@ class MemorizedLearner_1:
 
         def incorporate(self):
             if self.vw is None:
-                from os import devnull
-                from coba import tools
-
-                #with open(devnull, 'w') as f, tools.redirect_stderr(f):
                 from vowpalwabbit import pyvw
                 self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --link=glf1 -q ax --cubic axx')
 
@@ -59,66 +55,16 @@ class MemorizedLearner_1:
             self.vw.learn(ex)
 
     class LearnedEuclideanDistance:
-        def __init__(self, *args, **kwargs):
-            self.vw = None
+        def __init__(self,learn=True):
+            
+            self.vw    = None
+            self.tt    = [0]*6
+            self.learn = learn
 
         def incorporate(self):
             if self.vw is None:
                 from vowpalwabbit import pyvw
-
-                self.vw = pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic -qxx --link=glf1')
-
-        def predict(self, xraw, z):
-            self.incorporate()
-
-            import numpy as np
-
-            (x, a) = xraw
-
-            (xprimeraw, omegaprime) = z
-            (xprime, aprime) = xprimeraw
-
-            xa = np.hstack(( x, a, np.reshape(np.outer(x, a), -1) ))
-            xaprime = np.hstack(( xprime, aprime, np.reshape(np.outer(xprime, aprime), -1) ))
-
-            dxa = xa - xaprime
-            initial = -0.01 * dxa.dot(dxa)
-
-            ex = f' |x ' + ' '.join([f'{n+1}:{v*v}' for n, v in enumerate(dxa)])
-            return initial + self.vw.predict(ex)
-
-        def update(self, xraw, z, r):
-            self.incorporate()
-
-            import numpy as np
-
-            if r > 0 and len(z) > 1:
-                (x, a) = xraw
-                xa = np.hstack(( x, a, np.reshape(np.outer(x, a), -1) ))
-
-                (xprime, aprime) = z[0][0]
-                xaprime = np.hstack(( xprime, aprime, np.reshape(np.outer(xprime, aprime), -1) ))
-                dxa = xa - xaprime
-
-                (xpp, app) = z[1][0]
-                xapp = np.hstack(( xpp, app, np.reshape(np.outer(xpp, app), -1) ))
-                dxap = xa - xapp
-
-                initial = 0.01 * (dxa.dot(dxa) - dxap.dot(dxap))
-
-                ex = f'1 {r} {initial} |x ' + ' '.join([f'{n+1}:{v*v-vp*vp}' for n, (v, vp) in enumerate(zip(dxa, dxap))])
-                self.vw.learn(ex)
-
-    class MarkLearnedEuclideanDistance:
-        def __init__(self, *args, **kwargs):
-            self.vw = None
-
-            self.tt = [0]*6
-
-        def incorporate(self):
-            if self.vw is None:
-                from vowpalwabbit import pyvw
-                self.vw = pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic --interactions xxa --link=glf1')
+                self.vw = pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic --link=glf1')
 
         def outer(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> Dict[str,float]:
             return { key1+'_'+key2: val1*val2 for key1,val1 in vec1.items() for key2,val2 in vec2.items() }
@@ -144,7 +90,8 @@ class MemorizedLearner_1:
             return sum([ vec1[key]*vec2[key] for key in keys ])
 
         def predict(self, xraw, z):            
-            self.incorporate()
+            if self.learn:
+                self.incorporate()
 
             ss = [0]*6
             ee = [0]*6
@@ -185,27 +132,21 @@ class MemorizedLearner_1:
             dxa_dot_dxa = self.inner(dxa, dxa)                            
             ee[3] = time.time()
 
-            # ss[4] = time.time()
-            # if a == aprime:
-            #     dxa_dot_dxa = 2*sum([x[key]**2 + xprime[key]**2 - 2*x[key]*xprime[key] for key in keys])
-            # else:
-            #     dxa_dot_dxa = 2*sum([x[key]**2 + xprime[key]**2 - x[key]*xprime[key] for key in keys])
-            # ee[4] = time.time()
-
             ss[4] = time.time()
-            ex = f' |x ' + ' '.join([f'{k}:{round(v*v,6)}' for k,v in dxa.items()])
-            v = -0.01 * dxa_dot_dxa + self.vw.predict(ex)
+            if self.learn:
+                v = -0.01 * dxa_dot_dxa + self.vw.predict(f' |x ' + ' '.join([f'{k}:{round(v*v,6)}' for k,v in dxa.items()]))
+            else:
+                v = -0.01 * dxa_dot_dxa
             ee[4] = time.time()
 
             for i,s,e in zip(count(),ss,ee):
                 self.tt[i] += e-s
 
-            #this assert statement can only be used when the data set is dense
-            #assert abs(v - MemorizedLearner_1.LearnedEuclideanDistance().predict(xraw, z)) <= .1
-
             return v
 
         def update(self, xraw, z, r):
+            if not self.learn: return
+
             self.incorporate()
 
             import numpy as np
@@ -250,19 +191,16 @@ class MemorizedLearner_1:
 
     @staticmethod
     def routerFactory():
-        return MemorizedLearner_1.LogisticModel(eta0=1e-2)
+        return MemorizedLearner_1.LogisticModel()
 
-    def __init__(self, epsilon: float, max_memories: int = 1000) -> None:
-
+    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True) -> None:
         self._epsilon      = epsilon
-        self._max_memories = max_memories        
-        self._random       = random.Random(31337)
-        self._probs        = {}
-        self._update       = {}
+        self._learn_dist   = learn_dist
+        self._max_memories = max_memories
         self._i            = 0
 
     def init(self):
-        scorer      = MemorizedLearner_1.MarkLearnedEuclideanDistance()
+        scorer      = MemorizedLearner_1.LearnedEuclideanDistance(self._learn_dist)
         randomState = random.Random(45)
         ords        = random.Random(2112)
         self._mem   = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=40, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
@@ -273,7 +211,7 @@ class MemorizedLearner_1:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return {'e':self._epsilon, 'm': self._max_memories, 'b': bits}
+        return {'e':self._epsilon, 'm': self._max_memories, 'b': bits, 'ld':self._learn_dist }
 
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -289,21 +227,13 @@ class MemorizedLearner_1:
             if len(z) > 0 and z[0][1] > greedy_r:
                 (greedy_r, greedy_a) = (z[0][1], action)
 
-        ga = actions.index(greedy_a)
+        ga   = actions.index(greedy_a)
         minp = self._epsilon / len(actions)
 
         if logn and self._i % logn == 0:
            print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
 
-        if self._random.random() < self._epsilon:
-            ra = self._random.randint(0,len(actions)-1)
-            p = 1.0 - self._epsilon + minp if ra == ga else minp
-            self._probs[key] = (p, minp)
-            return [ float(i == ra) for i in range(len(actions)) ]
-        else:
-            p = 1.0 - self._epsilon + minp
-            self._probs[key] = (p, minp)
-            return [ float(i == ga) for i in range(len(actions)) ]
+        return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(actions)) ]
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""
@@ -318,8 +248,6 @@ class MemorizedLearner_1:
         #the result of this query in `choose` to use here
         (u,z) = self._mem.query(x, k=2, epsilon=1)
 
-        (p, minp) = self._probs.pop(key)
-
         if len(z) > 0:
             megalr = 0.1
             newval = (1.0 - megalr) * z[0][1] + megalr * reward
@@ -331,6 +259,7 @@ class MemorizedLearner_1:
         # consider blending repeat contexts in the future
         if x in self._mem.leafbykey:
             self._mem.delete(x)
+
         self._mem.insert(x, reward)
 
         if logn and self._i % logn == 0:
@@ -343,19 +272,18 @@ class MemorizedLearner_1:
             return (context, action)
 
 class ResidualLearner_1:
-    def __init__(self, epsilon: float, max_memories: int):
-        self._epsilon = epsilon
-        self._max_memories = max_memories
-        self._random = random.Random(0xdeadbeef)
-        self._probs = {}
-        self._i = 0
+    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, signal:str = 'l1'):
         
-        self.memory = MemorizedLearner_1(0.0, self._max_memories)
+        self._epsilon  = epsilon
+        self._i        = 0
+        self._predicts = {}
+        self._signal   = signal
+        
+        self.memory = MemorizedLearner_1(0.0, max_memories, learn_dist)
 
     def init(self):
         from vowpalwabbit import pyvw
 
-        #with open(devnull, 'w') as f, tools.redirect_stderr(f):
         self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s')
         
         self.memory.init()
@@ -366,7 +294,7 @@ class ResidualLearner_1:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return {'e':self._epsilon, 'm': self._max_memories, 'b': bits}
+        return  { **self.memory.params, "sig": self._signal }
 
     def toadf(self, context, actions, label=None):
         assert isinstance(context, (tuple, dict))
@@ -384,124 +312,21 @@ class ResidualLearner_1:
             for dacost in ((f'0:{label[1]}:{label[2]}' if label is not None and n == label[0] else ''),)
         ])
 
-    def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
-        """Choose which action index to take."""
+    def signal(self, obs_resid, cmt_resid):
 
-        predict_start = time.time()
-        self._i += 1
-
-        exstr = self.toadf(context, actions)
-        predict = self.vw.predict(exstr)
-        deltas = []
-
-        for n, action in enumerate(actions):
-            mq = self.memory.flat(context, action)
-            (_, z) = self.memory._mem.query(mq, 1, 0)
-            deltas.append(z[0][1] if len(z) > 0 else 0)
-
-        ga = min(((p + dp, n)
-                 for p, dp, n in zip(predict, deltas, range(len(actions))))
-                )[1]
-        minp = self._epsilon / len(actions)
-
-        if self._random.random() < self._epsilon:
-            ra = self._random.randint(0, len(actions)-1)
-            p = 1.0 - self._epsilon + minp if ra == ga else minp
-            self._probs[key] = (p, minp, ra, predict[ra], actions)
-            prediction = [ float(i == ra) for i in range(len(actions)) ]
-        else:
-            p = 1.0 - self._epsilon + minp
-            self._probs[key] = (p, minp, ga, predict[ga], actions)
-            prediction = [ float(i==ga) for i in range(len(actions))]
-
-        if logn and self._i % logn == 0:
-            print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
-
-        return prediction
-
-
-    def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
-        """Learn about the result of an action that was taken in a context."""
-
-        learn_start = time.time()
-        
-        (prob, minp, aind, prd_loss, actions) = self._probs.pop(key)
-
-        obs_loss  = -reward
-        obs_resid = obs_loss-prd_loss
-        
-        exstr = self.toadf(context, actions, (aind, obs_loss, prob))
-        self.vw.learn(exstr)
-
-        x = self.memory.flat(context, action)
-        (u, z) = self.memory._mem.query(x, k=2, epsilon=1)
-
-        if len(z) > 0:
-            
-            smooth = 0.1
-            cmt_resid = (1.0 - smooth) * z[0][1] + smooth * obs_resid
-            
-            self.memory._mem.updateomega(z[0][0], cmt_resid)
-
+        if self._signal == 'l1':
             deltarvw    = sorted([-1, obs_resid                     , 1])[1]
             deltarcombo = sorted([-1, obs_resid-cmt_resid           , 1])[1]
             rupdate     = sorted([0 , abs(deltarvw)-abs(deltarcombo)   ])[1]
+            return rupdate
 
-            #supervised component, aka how valuable was u,z for query x
-            self.memory._mem.update(u, x, z, rupdate)
+        if self._signal == "pct":
+            if obs_resid == 0:
+                return float(cmt_resid==0)
+            else:
+                return sorted([0, 1. - abs(obs_resid-cmt_resid)/abs(obs_resid)])[1]
 
-        # replicate duplicates for now.  TODO: update memories
-        if x in self.memory._mem.leafbykey:
-            self.memory._mem.delete(x)
-        
-        self.memory._mem.insert(x, obs_resid)
-
-        if logn and self._i % logn == 0:
-            print(f"{self._i}. learn time {round(time.time()-learn_start, 2)}")
-
-class ResidualLearner_2:
-    def __init__(self, epsilon: float, max_memories: int):
-        self._epsilon = epsilon
-        self._max_memories = max_memories
-        self._random = random.Random(0xdeadbeef)
-        self._probs = {}
-        self._i     = 0
-
-        self.memory = MemorizedLearner_1(0.0, self._max_memories)
-
-    def init(self):
-        from os import devnull
-        from coba import tools
-        from vowpalwabbit import pyvw
-
-        #with open(devnull, 'w') as f, tools.redirect_stderr(f):
-        self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s')
-        
-        self.memory.init()
-
-    @property
-    def family(self) -> str:
-        return "CMT_Residual_2"
-
-    @property
-    def params(self) -> Dict[str,Any]:
-        return {'e':self._epsilon, 'm': self._max_memories, 'b': bits}
-
-    def toadf(self, context, actions, label=None):
-        assert isinstance(context, (tuple, dict))
-
-        if isinstance(context, tuple):
-            context_dict = dict(enumerate(context))
-        else:
-            context_dict = context
-
-        return '\n'.join([
-        'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in context_dict.items() ]),
-        ] + [
-            f'{dacost} |a ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(a) if v != 0 ])
-            for n, a in enumerate(actions)
-            for dacost in ((f'0:{label[1]}:{label[2]}' if label is not None and n == label[0] else ''),)
-        ])
+        raise Exception(f"Unrecognized signal type: {self._signal}")
 
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -509,44 +334,39 @@ class ResidualLearner_2:
         predict_start = time.time()
         self._i += 1
 
-        exstr = self.toadf(context, actions)
-        predict = self.vw.predict(exstr)
+        predicts = self.vw.predict(self.toadf(context, actions))
         deltas = []
 
-        for n, action in enumerate(actions):
+        for action in actions:
             mq = self.memory.flat(context, action)
             (_, z) = self.memory._mem.query(mq, 1, 0)
             deltas.append(z[0][1] if len(z) > 0 else 0)
 
-        ga = min(((p + dp, n)
-                 for p, dp, n in zip(predict, deltas, range(len(actions))))
-                )[1]
+        ga   = min(((p + dp, n) for p, dp, n in zip(predicts, deltas, range(len(actions)))))[1]
         minp = self._epsilon / len(actions)
+
+        self._predicts[key] = (predicts, actions)
 
         if logn and self._i % logn == 0:
             print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
 
-        if self._random.random() < self._epsilon:
-            ra = self._random.randint(0, len(actions)-1)
-            p = 1.0 - self._epsilon + minp if ra == ga else minp
-            self._probs[key] = (p, minp, ra, predict[ra], actions)
-            return [ float(i == ra) for i in range(len(actions)) ]
-        else:
-            p = 1.0 - self._epsilon + minp
-            self._probs[key] = (p, minp, ga, predict[ga], actions)
-            return [ float(i==ga) for i in range(len(actions))]
+        return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(actions)) ]
+
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""
 
         learn_start = time.time()
+        
+        (predicts, actions) = self._predicts.pop(key)
 
-        (prob, minp, aind, prd_loss, actions) = self._probs.pop(key)
+        act_ind = actions.index(action)
+        prd_loss = predicts[act_ind]
 
         obs_loss  = -reward
         obs_resid = obs_loss-prd_loss
         
-        exstr = self.toadf(context, actions, (aind, obs_loss, prob))
+        exstr = self.toadf(context, actions, (act_ind, obs_loss, probability))
         self.vw.learn(exstr)
 
         x = self.memory.flat(context, action)
@@ -554,23 +374,16 @@ class ResidualLearner_2:
 
         if len(z) > 0:
 
-            smooth = 0.1
+            smooth    = 0.1
             cmt_resid = (1.0 - smooth) * z[0][1] + smooth * obs_resid
 
             self.memory._mem.updateomega(z[0][0], cmt_resid)
-
-            if obs_resid == 0:
-                rupdate = float(cmt_resid==0)
-            else:
-                rupdate = sorted([0, 1. - abs(obs_resid-cmt_resid)/abs(obs_resid)])[1]
-
-            #supervised component, aka how valuable was u,z for query x
-            self.memory._mem.update(u, x, z, rupdate)
+            self.memory._mem.update(u, x, z, self.signal(obs_resid,cmt_resid))
 
         # replicate duplicates for now.  TODO: update memories
         if x in self.memory._mem.leafbykey:
             self.memory._mem.delete(x)
-
+        
         self.memory._mem.insert(x, obs_resid)
 
         if logn and self._i % logn == 0:
@@ -634,10 +447,6 @@ class JordanLogisticLearner:
 
         def incorporate(self):
             if self.vw is None:
-                from os import devnull
-                from coba import tools
-
-                #with open(devnull, 'w') as f, tools.redirect_stderr(f):
                 from vowpalwabbit import pyvw
                 self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic -q ax --cubic axx --ignore_linear x --coin')
 
@@ -817,7 +626,7 @@ class JordanLogisticLearner:
 
         #scorer        = MemorizedLearner_1.NormalizedLinearProduct()
 
-        scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-2)
+        scorer        = MemorizedLearner_1.LearnedEuclideanDistance()
         randomState   = random.Random(45)
         ords          = random.Random(2112)
 
@@ -826,7 +635,6 @@ class JordanLogisticLearner:
         self._lr           = lr
         self._epsilon      = epsilon
         self._mem          = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=10, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=max_memories)
-        self._update       = {}
         self._max_memories = max_memories
         self.parametrized_model = []
         self.lf = nn.BCELoss()
@@ -977,10 +785,6 @@ class JordanVowpalLearner:
 
         def incorporate(self):
             if self.vw is None:
-                from os import devnull
-                from coba import execution
-
-                #with open(devnull, 'w') as f, execution.redirect_stderr(f):
                 from vowpalwabbit import pyvw
                 self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic -q ax --cubic axx --ignore_linear x --coin')
 
@@ -1160,7 +964,7 @@ class JordanVowpalLearner:
 
         #scorer        = MemorizedLearner_1.NormalizedLinearProduct()
 
-        scorer        = MemorizedLearner_1.LearnedEuclideanDistance(eta0=1e-2)
+        scorer        = MemorizedLearner_1.LearnedEuclideanDistance()
         randomState   = random.Random(45)
         ords          = random.Random(2112)
 
@@ -1169,7 +973,6 @@ class JordanVowpalLearner:
         self._lr           = lr
         self._epsilon      = epsilon
         self._mem          = CMT(MemorizedLearner_1.routerFactory, scorer, alpha=0.25, c=10, d=1, randomState=randomState, optimizedDeleteRandomState=ords, maxMemories=max_memories)
-        self._update       = {}
         self._max_memories = max_memories
         self.parametrized_model = []
         self.lf = nn.BCELoss()
