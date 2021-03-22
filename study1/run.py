@@ -17,10 +17,10 @@ json = f"./study1/experiments/{experiment}.json"
 log  = f"./study1/outcomes/{experiment}.log"
 
 learners = [
-    ResidualLearner(0.1, 2000, learn_dist=True),
-    ResidualLearner(0.1, 2000, learn_dist=False),
     MemorizedLearner(0.1, 2000, learn_dist=True),
     MemorizedLearner(0.1, 2000, learn_dist=False),
+    ResidualLearner(0.1, 2000, learn_dist=True),
+    ResidualLearner(0.1, 2000, learn_dist=False),
     UcbBanditLearner(),
     VowpalLearner(epsilon=0.1, seed=seed),
     CorralLearner([ResidualLearner(0.1, 2000, True, "pct"), VowpalLearner(epsilon=0.1,seed=seed)], eta=.075, T=4000, seed=seed)

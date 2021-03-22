@@ -13,16 +13,12 @@ bits = 20
 class CMT_Implementation_1:
     class LogisticModel:
         def __init__(self, *args, **kwargs):
-            self.vw = None
 
-        def incorporate(self):
-            if self.vw is None:
-                from vowpalwabbit import pyvw
-                self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --link=glf1 -q ax --cubic axx')
+            from vowpalwabbit import pyvw
+            self.vw = pyvw.vw(f'--quiet -b 15 --loss_function logistic --link=glf1 -q ax --cubic axx')
 
         def predict(self, xraw):
-            self.incorporate()
-
+            
             (x, a) = xraw
             ex = ' |x ' + ' '.join(
                 [f'{n+1}:{v}' for n, v in enumerate(x) if v != 0]
@@ -33,7 +29,6 @@ class CMT_Implementation_1:
             return self.vw.predict(ex)
 
         def update(self, xraw, y, w):
-            self.incorporate()
 
             (x, a) = xraw
             assert y == 1 or y == -1
@@ -242,8 +237,8 @@ class MemorizedLearner:
     
     def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True) -> None:
 
-        self._epsilon      = epsilon
-        self._i            = 0
+        self._epsilon = epsilon
+        self._i       = 0
 
         self.mem = CMT_Implementation_1(max_memories, learn_dist)
 
@@ -252,7 +247,7 @@ class MemorizedLearner:
 
     @property
     def family(self) -> str:
-        return "CMT_1"
+        return "CMT_Memorized"
 
     @property
     def params(self) -> Dict[str,Any]:
@@ -264,10 +259,10 @@ class MemorizedLearner:
         predict_start = time.time()
         self._i += 1
 
-        (greedy_r, greedy_a) = -math.inf, actions[0]
+        (greedy_a, greedy_r) = actions[0], -math.inf
 
         for action, value in self.mem.query(context, actions):
-            if value > greedy_r: (greedy_a, greedy_r) = (action, greedy_r)
+            if value > greedy_r: (greedy_a, greedy_r) = (action, value)
 
         ga   = actions.index(greedy_a)
         minp = self._epsilon / len(actions)
@@ -298,7 +293,7 @@ class ResidualLearner:
 
     @property
     def family(self) -> str:
-        return "CMT_Residual_1"
+        return "CMT_Residual"
 
     @property
     def params(self) -> Dict[str,Any]:
