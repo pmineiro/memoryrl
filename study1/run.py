@@ -8,7 +8,7 @@ from coba.tools import CobaRegistry
 CobaRegistry.register("Mediamill", MediamillSource)
 CobaRegistry.register("Memorizable", MemorizableSource)
 
-experiment       = "test"
+experiment       = "memo"
 processes        = None
 maxtasksperchild = None
 seed             = 10

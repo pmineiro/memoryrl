@@ -80,7 +80,7 @@ class MemorizableSource(Source[Simulation]):
     
     def read(self) -> Simulation:
         
-        contexts  = list(map(tuple,torch.randn(100,10).tolist()))
+        contexts  = list(map(tuple,torch.randn(20,10).tolist()))
         actions = [ (1, 0, 0), (0, 1, 0), (0, 0, 1) ]
         answers = { context: random.choice(actions) for context in contexts }
 
