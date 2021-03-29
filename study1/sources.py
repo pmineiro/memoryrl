@@ -1,12 +1,16 @@
+import random
 
 from collections import Counter
-from itertools import chain, compress
-from typing import List, Sequence, Dict
+from itertools import chain
+from typing import List, Sequence, Dict, Tuple
 
 from coba.data.encoders import OneHotEncoder
 from coba.data.sources import Source
 from coba.simulations import Interaction, Reward, Simulation, MemorySimulation
 from coba.random import CobaRandom
+from coba.simulations.core import LambdaSimulation
+
+import torch
 
 class MultiLabelReward(Reward):
 
@@ -71,3 +75,25 @@ class MediamillSource(Source[Simulation]):
     
     def __repr__(self):
         return "Mediamill"
+
+class MemorizableSource(Source[Simulation]):
+    
+    def read(self) -> Simulation:
+        
+        contexts  = list(map(tuple,torch.randn(100,10).tolist()))
+        actions = [ (1, 0, 0), (0, 1, 0), (0, 0, 1) ]
+        answers = { context: random.choice(actions) for context in contexts }
+
+        def context_generator(index:int):
+            return random.choice(contexts)
+        
+        def action_generator(index:int, context:Tuple[float,...]):
+            return actions
+
+        def reward_function(index:int, context:Tuple[float,...], action: Tuple[int,...]):
+            return float(answers[context] == action)
+
+        return LambdaSimulation(10000, context_generator, action_generator, reward_function).read()
+    
+    def __repr__(self):
+        return "Memorizable"

@@ -15,7 +15,7 @@ class CMT_Implementation_1:
         def __init__(self, *args, **kwargs):
 
             from vowpalwabbit import pyvw
-            self.vw = pyvw.vw(f'--quiet -b 15 --loss_function logistic --link=glf1 -q ax --cubic axx')
+            self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --link=glf1 -q ax --cubic axx')
 
         def predict(self, xraw):
             

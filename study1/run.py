@@ -1,13 +1,14 @@
 from learners import ResidualLearner, MemorizedLearner
-from sources import MediamillSource
+from sources import MediamillSource, MemorizableSource
 
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner, UcbBanditLearner, CorralLearner
 from coba.tools import CobaRegistry
 
 CobaRegistry.register("Mediamill", MediamillSource)
+CobaRegistry.register("Memorizable", MemorizableSource)
 
-experiment       = "all"
+experiment       = "test"
 processes        = None
 maxtasksperchild = None
 seed             = 10
