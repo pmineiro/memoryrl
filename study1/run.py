@@ -2,7 +2,7 @@ from learners import ResidualLearner, MemorizedLearner, CorralRejectionLearner
 from sources import MediamillSource, MemorizableSource
 
 from coba.benchmarks import Benchmark
-from coba.learners import VowpalLearner, UcbBanditLearner,
+from coba.learners import VowpalLearner, UcbBanditLearner
 from coba.tools import CobaRegistry
 
 CobaRegistry.register("Mediamill", MediamillSource)
