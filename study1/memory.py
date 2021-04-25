@@ -8,8 +8,11 @@ class CMT:
             self.left = left
             self.right = right
             self.g = g
-            self.depth = 0 if parent is None else (1 + self.parent.depth)
             #assert self.depth < 10, f'wtf {self.depth}'
+
+        @property
+        def depth(self):
+            return 1 + self.parent.depth if self.parent else 0
 
         def makeInternal(self, g):
             assert self.isLeaf
@@ -33,11 +36,9 @@ class CMT:
                 self.left = replacement.left
                 if self.left:
                     self.left.parent = self
-                    self.left.depth = 1 + self.depth
                 self.right = replacement.right
                 if self.right:
                     self.right.parent = self
-                    self.right.depth = 1 + self.depth
                 self.g = replacement.g
 
         def topk(self, x, k, f):
@@ -112,6 +113,7 @@ class CMT:
         self.keyslru = CMT.LRU()
         self.rerouting = False
         self.splitting = False
+        self._router_count = 0
 
     def nodeForeach(self, f, node=None):
         if node is None:
@@ -232,6 +234,7 @@ class CMT:
             assert v.n == len(v.memories)
         else:
             self.splitting = True
+            self._router_count += 1
             mem = v.makeInternal(g=self.routerFactory())
 
             while mem:

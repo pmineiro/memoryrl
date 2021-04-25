@@ -22,11 +22,10 @@ log  = f"./study1/outcomes/{experiment}.log"
 
 learners = [
     MemorizedLearner(0.1, max_memories, learn_distance),
-    ResidualLearner(0.1, max_memories, learn_distance),
+    ResidualLearner(0.1 , max_memories, learn_distance),
     UcbBanditLearner(),
     VowpalLearner(epsilon=0.1, seed=seed),
     CorralRejectionLearner([ResidualLearner(0.1, max_memories, learn_distance), MemorizedLearner(0.1, max_memories, learn_distance), VowpalLearner(epsilon=0.1,seed=seed)], eta=.075, fix_count=3000, T=4000, seed=seed),
-    CorralRejectionLearner([ResidualLearner(0.1, max_memories, learn_distance), MemorizedLearner(0.1, max_memories, learn_distance), VowpalLearner(epsilon=0.1,seed=seed)], eta=.075, fix_count=None, T=4000, seed=seed),
 ]
 
 if __name__ == '__main__':

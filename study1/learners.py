@@ -11,7 +11,7 @@ logn = None
 bits = 20
 
 class CMT_Implemented:
-    class LogisticModel:
+    class LogisticModel_VW:
         def __init__(self, *args, **kwargs):
 
             from vowpalwabbit import pyvw
@@ -40,6 +40,27 @@ class CMT_Implemented:
             )
 
             self.vw.learn(ex)
+
+    class LogisticModel_SK:
+        def __init__(self, *args, **kwargs):
+
+            from sklearn.linear_model import SGDClassifier
+            
+            self.clf = SGDClassifier(loss="log", )
+            self.is_fit = False
+
+        def predict(self, xraw): 
+            if self.is_fit:
+                return self.clf.predict(self._domain(*xraw))
+            else:
+                return 1
+
+        def update(self, xraw, y, w):
+            self.is_fit = True
+            self.clf.partial_fit(self._domain(*xraw), [y], sample_weight=[w], classes=[-1,1])
+            
+        def _domain(self, x, a):
+            return [x+a]
 
     class LearnedEuclideanDistance:
         
@@ -166,18 +187,20 @@ class CMT_Implemented:
                 ex = f'1 {r} {initial} |x ' + ' '.join([f'{key}:{round(dxa[key]**2-dxap[key]**2,6)}' for key in keys])
                 self.vw.learn(ex)
 
-    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se') -> None:
+    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk') -> None:
 
         self._learn_dist   = learn_dist
         self._max_memories = max_memories
         self._signal_type  = signal_type
+        self._router_type  = router_type
 
     @property
     def params(self):
-        return {'m': self._max_memories, 'b': bits, 'ld': self._learn_dist, 'sig': self._signal_type }
+        return { 'm': self._max_memories, 'b': bits, 'ld': self._learn_dist, 'sig': self._signal_type, 'rt': self._router_type }
 
     def init(self):
-        router_factory = CMT_Implemented.LogisticModel 
+        router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
+        
         scorer         = CMT_Implemented.LearnedEuclideanDistance(self._learn_dist)
         random_state   = random.Random(1337)
         ords           = random.Random(2112)
@@ -235,12 +258,12 @@ class CMT_Implemented:
 
 class MemorizedLearner:
     
-    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, signal:str = 'se') -> None:
+    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, signal:str = 'se', router: str = 'sk') -> None:
 
         self._epsilon = epsilon
         self._i       = 0
 
-        self.mem = CMT_Implemented(max_memories, learn_dist, signal)
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router)
 
     def init(self):
         self.mem.init()
@@ -277,10 +300,10 @@ class MemorizedLearner:
         self.mem.update(context, action, reward)
 
 class ResidualLearner:
-    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, signal:str = 'l1'):
+    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, signal:str = 'l1', router:str ='sk'):
 
         self._epsilon = epsilon
-        self.mem = CMT_Implemented(max_memories, learn_dist, signal)
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router)
 
         self._i        = 0
         self._predicts = {}
