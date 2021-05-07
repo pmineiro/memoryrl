@@ -1,14 +1,13 @@
 import random
 
-from collections import Counter
-from itertools import chain
+from gzip import GzipFile
 from typing import List, Sequence, Dict, Tuple
 
 from coba.data.encoders import OneHotEncoder
 from coba.data.sources import Source
-from coba.simulations import Interaction, Reward, Simulation, MemorySimulation
-from coba.random import CobaRandom
+from coba.simulations import Interaction, Reward, Simulation, MemorySimulation, ClassificationSimulation
 from coba.simulations.core import LambdaSimulation
+from coba.tools.registry import coba_registry_class
 
 import torch
 
@@ -25,29 +24,28 @@ class MultiLabelReward(Reward):
 
         return rewards
 
+@coba_registry_class("Mediamill")
 class MediamillSource(Source[Simulation]):
 
-    def __init__(self, filename:str, balance=True) -> None:
-
-        self._filename = filename
-        self._balance = balance
+    #The mediamill data set found on the following page
+    #http://manikvarma.org/downloads/XC/XMLRepository.html
 
     def read(self) -> Simulation:
 
         interactions       : List[Interaction] = []
         interactions_labels: Dict[int, Sequence[int]] = {}
 
-        with open(self._filename) as fs:
-            
-            n_actions = int(next(fs).split(' ')[2])
+        with GzipFile("./study1/datasets/Mediamill_data.gz", 'r') as fs:
+
+            n_actions = int(next(fs).decode('utf-8').split(' ')[2])
 
             action_encoder = OneHotEncoder(list(range(n_actions)))
             actions        = action_encoder.encode(list(range(n_actions)))
 
             for i,line in enumerate(fs):
-                
-                items = line.split(' ')
-                
+
+                items = line.decode('utf-8').split(' ')
+
                 if items[0] == '': continue
 
                 example_labels   = [ action_encoder.encode([int(l)])[0] for l in items[0].split(',') ]
@@ -56,26 +54,12 @@ class MediamillSource(Source[Simulation]):
                 interactions.append(Interaction(example_features, actions, i))
                 interactions_labels[i] = example_labels
 
-        if self._balance:
-
-            random = CobaRandom(1337)
-
-            label_counts = Counter([l.index(1) for l in chain.from_iterable(interactions_labels.values())])
-            top_6 = [k for k, v in sorted(label_counts.items(), key=lambda i: i[1], reverse=True)][0:6]
-
-            for interaction in interactions:
-                interactions_labels[interaction.key] = [ l for l in interactions_labels[interaction.key] if l.index(1) not in top_6 ]
-
-            interactions = [i for i in interactions if interactions_labels[i.key]]
-
-            for interaction in interactions:
-                interactions_labels[interaction.key] = [random.choice(interactions_labels[interaction.key])]
-
         return MemorySimulation(interactions, MultiLabelReward(interactions_labels))
     
     def __repr__(self):
-        return "Mediamill"
+        return "mediamill"
 
+@coba_registry_class("Memorizable")
 class MemorizableSource(Source[Simulation]):
     
     def read(self) -> Simulation:
@@ -96,4 +80,54 @@ class MemorizableSource(Source[Simulation]):
         return LambdaSimulation(10000, context_generator, action_generator, reward_function).read()
     
     def __repr__(self):
-        return "Memorizable"
+        return "memorizable"
+
+class LibSvmSource(Source[Simulation]):
+    
+    def __init__(self, filename) -> None:
+        self._filename = filename
+
+    def read(self) -> Simulation:
+
+        with GzipFile(self._filename, 'r') as fs:
+
+            features = []
+            labels   = []
+
+            for line in fs:
+
+                items = line.decode('utf-8').strip().split(' ')
+
+                label    = int(items[0])
+                splits   = [ i.split(":") for i in items[1:] ]
+                encoded  = [ (int(s[0]), float(s[1])) for s in splits ]
+                sparse   = tuple(zip(*encoded))
+
+                features.append(sparse)
+                labels.append(label)
+
+        return ClassificationSimulation(features, labels)
+
+@coba_registry_class("Sector")
+class SectorSource(LibSvmSource):
+
+    #combination of the train and test sets of the sector dataset
+    #https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#sector
+
+    def __init__(self) -> None:
+        super().__init__("./study1/datasets/sector.gz")
+    
+    def __repr__(self):
+        return "sector"
+
+@coba_registry_class("Rcv1")
+class Rcv1Source(LibSvmSource):
+
+    #the train set of the rcv1.multiclass dataset (train in order to keep the dataset small)
+    #https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#rcv1.multiclass
+
+    def __init__(self) -> None:
+        super().__init__("./study1/datasets/rcv1.gz")
+    
+    def __repr__(self):
+        return "rcv1"

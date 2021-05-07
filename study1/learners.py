@@ -11,7 +11,7 @@ from coba.learners import VowpalLearner
 
 from memory import CMT
 
-logn = None
+logn = 1
 bits = 20
 
 class CMT_Implemented:
@@ -48,14 +48,17 @@ class CMT_Implemented:
     class LogisticModel_SK:
         def __init__(self):
 
+            from sklearn.preprocessing import PolynomialFeatures
+            from sklearn.feature_extraction import FeatureHasher
             from sklearn.linear_model import SGDClassifier
             
-            self.clf = SGDClassifier(loss="log", average=True)
+            self.clf  = SGDClassifier(loss="log", average=True)
+            self.hash = FeatureHasher(input_type="pair")
             self.is_fit = False
 
         def predict(self, xraw): 
             if self.is_fit:
-                return self.clf.predict(self._domain(*xraw))
+                return self.clf.predict(self._domain(*xraw))[0]
             else:
                 return 1
 
@@ -65,19 +68,23 @@ class CMT_Implemented:
             
         def _domain(self, x, a):
 
-            x = list(x)
-            a = list(a)
-            xa = np.outer(x,a).flatten().tolist()
-            xxa = np.outer(np.outer(x,x),a).flatten().tolist()
+            if isinstance(x[0], tuple):
+                features = self.hash.transform([list(zip(map(str,x[0]), x[1]))])
+            else:
+                x = list(x)
+                a = list(a)
+                xa = np.outer(x,a).flatten().tolist()
+                xxa = np.outer(np.outer(x,x),a).flatten().tolist()
+                features = [x+a+xa+xxa]
 
-            return [x+a+xa+xxa]
+            return features
 
     class LearnedEuclideanDistance:
-        
+
         def __init__(self,learn=True):
-            
+
             from vowpalwabbit import pyvw
-            
+
             self.vw    = None if not learn else pyvw.vw(f'--quiet -b {bits} --noconstant --loss_function logistic --link=glf1')            
             self.tt    = [0]*6
             self.learn = learn
@@ -116,13 +123,17 @@ class CMT_Implemented:
             (xprime, aprime) = xprimeraw
 
             ss[0] = time.time()
+            
             if not isinstance(x[0],tuple):
-                x      = enumerate(x)
-                xprime = enumerate(xprime)
+                x      = list(enumerate(x))
+                xprime = list(enumerate(xprime))
+            else:
+                x      = list(zip(*x))
+                xprime = list(zip(*xprime))
 
             if not isinstance(a[0],tuple):
-                a      = enumerate(a)
-                aprime = enumerate(aprime)
+                a      = list(enumerate(a))
+                aprime = list(enumerate(aprime))
 
             x      = { "x"+str(key):value for key,value in x if value != 0}
             a      = { "a"+str(key):value for key,value in a if value != 0 }
@@ -139,7 +150,7 @@ class CMT_Implemented:
             ss[2] = time.time()
             dxa = self.diff(xa,xaprime)
             ee[2] = time.time()
-            
+
             ss[3] = time.time()
             dxa_dot_dxa = self.inner(dxa, dxa)                            
             ee[3] = time.time()
@@ -168,6 +179,10 @@ class CMT_Implemented:
                     x      = enumerate(x)
                     xprime = enumerate(xprime)
                     xpp    = enumerate(xpp)
+                else:
+                    x      = list(zip(*x))
+                    xprime = list(zip(*xprime))
+                    xpp    = list(zip(*xpp))
 
                 if not isinstance(a[0],tuple):
                     a      = enumerate(a)
@@ -216,7 +231,7 @@ class CMT_Implemented:
         random_state   = random.Random(1337)
         ords           = random.Random(2112)
 
-        self.mem = CMT(router_factory, scorer, alpha=0.25, c=40, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
+        self.mem = CMT(router_factory, scorer, alpha=0.25, c=10, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
 
     def query(self, context, actions, default = None):
         for action in actions:
@@ -314,7 +329,7 @@ class ResidualLearner:
     def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, d=1, signal:str = 'l1', router:str ='sk'):
 
         self._epsilon = epsilon
-        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
+        self.mem      = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
 
         self._i        = 0
         self._predicts = {}
@@ -334,15 +349,14 @@ class ResidualLearner:
         return  { 'e':self._epsilon,  **self.mem.params }
 
     def toadf(self, context, actions, label=None):
-        assert isinstance(context, (tuple, dict))
 
-        if isinstance(context, tuple):
-            context_dict = dict(enumerate(context))
+        if len(context) == 2 and isinstance(context[0], tuple) and isinstance(context[1], tuple):
+            context = list(zip(*context))
         else:
-            context_dict = context
+            context = list(enumerate(context))
 
         return '\n'.join([
-            'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in context_dict.items() ]),
+            'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in context ]),
         ] + [
             f'{dacost} |a ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(a) if v != 0 ])
             for n, a in enumerate(actions)

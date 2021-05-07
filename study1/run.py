@@ -1,33 +1,36 @@
+import os
+
+#this is taken from https://github.com/xianyi/OpenBLAS
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['GOTO_NUM_THREADS'] = '1'
+os.environ['OMP_NUM_THREADS'] = '1'
+
+import sources #this import will register the sources for use in experiments
 from learners import ResidualLearner, MemorizedLearner, CorralEnsemble, CorralRejection
-from sources import MediamillSource, MemorizableSource
 
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner, UcbBanditLearner
-from coba.tools import CobaRegistry
 
-CobaRegistry.register("Mediamill", MediamillSource)
-CobaRegistry.register("Memorizable", MemorizableSource)
-
-experiment       = "madish"
+experiment       = "large"
 processes        = 1
 maxtasksperchild = None
 seed             = 10
 ignore_raise     = False
 
-max_memories = 1000
+max_memories   = 5000
 learn_distance = True
-epsilon = 0.1
+epsilon        = 0.1
 
 json = f"./study1/experiments/{experiment}.json"
 log  = f"./study1/outcomes/{experiment}.log"
+
+#4 learners * 3 permutations * 3 simulations = 36 experiments
 
 learners = [
     MemorizedLearner(epsilon , max_memories, learn_distance),
     ResidualLearner (epsilon , max_memories, learn_distance),
     VowpalLearner(epsilon=epsilon, seed=seed),
-    UcbBanditLearner(),
-    CorralEnsemble(max_memories, epsilon, eta=.075, fix_count=3000, T=4000, seed=seed),
-    CorralRejection(max_memories, epsilon, eta=.075, fix_count=3000, T=4000, seed=seed),
+    UcbBanditLearner()
 ]
 
 if __name__ == '__main__':
