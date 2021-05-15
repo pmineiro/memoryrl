@@ -3,7 +3,7 @@ import random
 import math
 
 from itertools import count
-from typing import Hashable, Sequence, Dict, Any, Optional
+from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union
 
 import numpy as np
 
@@ -11,7 +11,7 @@ from coba.learners import VowpalLearner
 
 from memory import CMT
 
-logn = 1
+logn = None
 bits = 20
 
 class CMT_Implemented:
@@ -48,7 +48,6 @@ class CMT_Implemented:
     class LogisticModel_SK:
         def __init__(self):
 
-            from sklearn.preprocessing import PolynomialFeatures
             from sklearn.feature_extraction import FeatureHasher
             from sklearn.linear_model import SGDClassifier
             
@@ -65,11 +64,19 @@ class CMT_Implemented:
         def update(self, xraw, y, w):
             self.is_fit = True
             self.clf.partial_fit(self._domain(*xraw), [y], sample_weight=[w], classes=[-1,1])
-            
+        
+        def _flat_outer(self, vec1: Sequence[Tuple[str,float]], vec2: Sequence[Tuple[str,float]]) -> Sequence[Tuple[str,float]]:
+            return [ (key1+'_'+key2, val1*val2) for key1,val1 in vec1 for key2,val2 in vec2 ]
+
         def _domain(self, x, a):
 
             if isinstance(x[0], tuple):
-                features = self.hash.transform([list(zip(map(str,x[0]), x[1]))])
+                x   = [ (f"x{i}", v) for i,v in zip(*x) ]
+                a   = [ (f"a{i}", v) for i,v in enumerate(a) if v != 0 ]
+                xa  = self._flat_outer(x,a)
+                xxa = self._flat_outer(self._flat_outer(x,x),a)
+
+                features = self.hash.transform([x+a+xa+xxa])
             else:
                 x = list(x)
                 a = list(a)
@@ -131,7 +138,7 @@ class CMT_Implemented:
                 x      = list(zip(*x))
                 xprime = list(zip(*xprime))
 
-            if not isinstance(a[0],tuple):
+            if len(a) > 0 and not isinstance(a[0],tuple):
                 a      = list(enumerate(a))
                 aprime = list(enumerate(aprime))
 
@@ -184,7 +191,7 @@ class CMT_Implemented:
                     xprime = list(zip(*xprime))
                     xpp    = list(zip(*xpp))
 
-                if not isinstance(a[0],tuple):
+                if len(a) > 0 and not isinstance(a[0],tuple):
                     a      = enumerate(a)
                     aprime = enumerate(aprime)
                     app    = enumerate(app)
@@ -233,54 +240,141 @@ class CMT_Implemented:
 
         self.mem = CMT(router_factory, scorer, alpha=0.25, c=10, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
 
-    def query(self, context, actions, default = None):
+    def query(self, context: Hashable, actions: Sequence[Hashable], default = None):
+        
+        results = []
+
         for action in actions:
-            (_, z) = self.mem.query(self._flat(context,action), 1, 0)
-            if len(z) >  0                        : yield (action, z[0][1])
-            if len(z) == 0 and default is not None: yield (action, default)
+            (_, z) = self.mem.query((context,action), 1, 0)
+            results.append(z[0][1] if len(z) > 0 else default)
 
-    def update(self, context, action, value):
+        return results
 
-        x = self._flat(context, action)
+    def update(self, context: Hashable, action: Hashable, observation: Union[float, np.ndarray]):
 
-        (u,z) = self.mem.query(x, k=2, epsilon=1)
+        memory_trigger = (context, action)
+
+        (u,z) = self.mem.query(memory_trigger, k=2, epsilon=1)
 
         if len(z) > 0:
-            megalr = 0.1
-            newval = (1.0 - megalr) * z[0][1] + megalr * value
+            memory = z[0][1] + 0.1 * ( observation-z[0][1] )
 
-            self.mem.updateomega(z[0][0], newval)
-            self.mem.update(u, x, z, self._signal(value, newval))
+            self.mem.updateomega(z[0][0], memory)
+            self.mem.update(u, memory_trigger, z, self._error_signal(observation, memory))
 
-        if x in self.mem.leafbykey:
-            self.mem.delete(x)
+        if memory_trigger in self.mem.leafbykey:
+            self.mem.delete(memory_trigger)
 
-        self.mem.insert(x, value)
+        self.mem.insert(memory_trigger, observation)
 
-    def _flat(self, context, action):
-        if isinstance(context,dict):
-            return (tuple(context.items()), action)
-        else:
-            return (context, action)
-
-    def _signal(self, obs, prd):
+    def _error_signal(self, obs, prd):
 
         if self._signal_type == 'se':
-            return 1-(prd-obs)**2
-
-        if self._signal_type == 'l1':
-            deltarvw    = sorted([-1, obs                           , 1])[1]
-            deltarcombo = sorted([-1, obs-prd                       , 1])[1]
-            rupdate     = sorted([0 , abs(deltarvw)-abs(deltarcombo)   ])[1]
-            return rupdate
-
-        if self._signal_type == "pct":
-            if obs == 0:
-                return float(prd==0)
+            if isinstance(prd, np.ndarray):
+                return 1-min(1, max(0, (np.linalg.norm(prd-obs)**2)/2))
             else:
-                return sorted([0, 1. - abs(obs-prd)/abs(prd)])[1]
+                return 1-(prd-obs)**2
 
-        raise Exception(f"Unrecognized signal type: {self._signal}")
+        if self._signal_type == 're':
+
+            how_much  = sorted([0, abs(obs)    , 1])[1]
+            how_close = sorted([0, abs(obs-prd), 1])[1]
+
+            return max(0, how_much - how_close)
+
+        raise Exception(f"Unrecognized signal type: {self._signal_type}")
+
+class FullFeedbackLearner:
+    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, d=1, signal:str = 'se', router: str = 'sk'):
+        self._epsilon = epsilon
+        self._i       = 0
+
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
+
+        self._full_reward = None
+        self._fixed_actions = None
+
+        self._times = [0, 0]
+
+    def init(self):
+        self.mem.init()
+
+    @property
+    def family(self) -> str:
+        return "CMT_FullFeedback"
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return { 'e':self._epsilon,  **self.mem.params }
+
+    def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
+        """Choose which action index to take."""
+
+        predict_start = time.time()
+
+        self._fixed_actions = self._fixed_actions or actions
+        self._i += 1
+
+        default_action = np.array([1] + [0]*(len(self._fixed_actions)-1))
+        action_one_hot = self.mem.query(context, [()], default=default_action)[0]
+
+        #print(action_one_hot)
+
+        if self._full_reward is None:
+            import coba.simulations
+            import simulations
+            
+            if len(self._fixed_actions) == 3:
+                self._full_reward = simulations.MemorizableSimulation().read().reward
+
+            if len(self._fixed_actions) == 26:
+                self._full_reward = coba.simulations.OpenmlSimulation(6).read().reward
+
+            if len(self._fixed_actions) == 2:
+                self._full_reward = coba.simulations.OpenmlSimulation(1471).read().reward
+
+            if len(self._fixed_actions) == 1000:
+                self._full_reward = coba.simulations.OpenmlSimulation(1592).read().reward
+            
+            if len(self._fixed_actions) == 51:
+                self._full_reward = simulations.Rcv1Simulation().read().reward
+
+            if len(self._fixed_actions) == 105:
+                self._full_reward = simulations.SectorSimulation().read().reward
+
+            if self._full_reward is None:
+                raise Exception("We were unable to associate a simulation with the observed action set.")
+
+        ga   = actions.index(self._fixed_actions[action_one_hot.argmax()])
+        #ga = actions.index(self._full_reward._labels[key])
+        minp = self._epsilon / len(self._fixed_actions)
+
+        self._times[0] += time.time()-predict_start
+
+        if logn and self._i % logn == 0:
+           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+
+        return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(self._fixed_actions)) ]
+
+    def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
+        """Learn about the result of an action that was taken in a context."""        
+
+        learn_start = time.time()
+
+        try:
+            true_label = self._full_reward._labels[key]
+            true_one_hot = np.zeros(len(self._fixed_actions))
+            true_one_hot[self._fixed_actions.index(true_label)] = 1
+
+            assert reward == int(action == true_label)
+        
+        except:
+            true_one_hot = np.array([ self._full_reward._rewards[(key,action)] for action in self._fixed_actions ])
+
+        self.mem.update(context, (), true_one_hot)
+
+        self._times[1] += time.time()-learn_start
 
 class MemorizedLearner:
     
@@ -290,6 +384,8 @@ class MemorizedLearner:
         self._i       = 0
 
         self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
+
+        self._times = [0, 0]
 
     def init(self):
         self.mem.init()
@@ -310,29 +406,38 @@ class MemorizedLearner:
 
         (greedy_a, greedy_r) = actions[0], -math.inf
 
-        for action, value in self.mem.query(context, actions):
-            if value > greedy_r: (greedy_a, greedy_r) = (action, value)
+        for action, remembered_value in zip(actions, self.mem.query(context, actions)):
+            if remembered_value is None: continue
+            if remembered_value > greedy_r: (greedy_a, greedy_r) = (action, remembered_value)
 
         ga   = actions.index(greedy_a)
         minp = self._epsilon / len(actions)
 
+        self._times[0] += time.time()-predict_start
+
         if logn and self._i % logn == 0:
-           print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
+           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(actions)) ]
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""
+        learn_start = time.time()
+        
         self.mem.update(context, action, reward)
+        
+        self._times[1] += time.time()-learn_start
 
 class ResidualLearner:
-    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, d=1, signal:str = 'l1', router:str ='sk'):
+    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, d=1, signal:str = 're', router:str ='sk'):
 
         self._epsilon = epsilon
         self.mem      = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
 
         self._i        = 0
         self._predicts = {}
+        self._times    = [0,0]
 
     def init(self):
         from vowpalwabbit import pyvw
@@ -370,24 +475,26 @@ class ResidualLearner:
         self._i += 1
 
         predicts = self.vw.predict(self.toadf(context, actions))
-        deltas = []
-
-        for _,value in self.mem.query(context,actions,0):
-            deltas.append(value)            
+        deltas   = self.mem.query(context, actions, 0)
 
         ga   = min(((p + dp, n) for p, dp, n in zip(predicts, deltas, range(len(actions)))))[1]
         minp = self._epsilon / len(actions)
 
         self._predicts[key] = (predicts, actions)
 
+        self._times[0] += time.time()-predict_start
+
         if logn and self._i % logn == 0:
-            print(f"{self._i}. prediction time {round(time.time()-predict_start, 2)}")
+           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(actions)) ]
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""
 
+        learn_start = time.time()
+        
         (predicts, actions) = self._predicts.pop(key)
 
         act_ind = actions.index(action)
@@ -398,6 +505,8 @@ class ResidualLearner:
 
         self.vw.learn(self.toadf(context, actions, (act_ind, obs_loss, probability)))
         self.mem.update(context, action, obs_resid)
+        
+        self._times[1] += time.time()-learn_start
 
 class CorralRejection:
     """This is modified implementation of the Agarwal et al. (2017) Corral algorithm.

@@ -5,8 +5,8 @@ os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['GOTO_NUM_THREADS'] = '1'
 os.environ['OMP_NUM_THREADS'] = '1'
 
-import sources #this import will register the sources for use in experiments
-from learners import ResidualLearner, MemorizedLearner, CorralEnsemble, CorralRejection
+import simulations #this import registers our simulations for use in experiments
+from learners import ResidualLearner, MemorizedLearner, CorralEnsemble, CorralRejection, FullFeedbackLearner
 
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner, UcbBanditLearner
@@ -17,16 +17,15 @@ maxtasksperchild = None
 seed             = 10
 ignore_raise     = False
 
-max_memories   = 5000
+max_memories   = 2000
 learn_distance = True
 epsilon        = 0.1
 
 json = f"./study1/experiments/{experiment}.json"
 log  = f"./study1/outcomes/{experiment}.log"
 
-#4 learners * 3 permutations * 3 simulations = 36 experiments
-
 learners = [
+    FullFeedbackLearner(epsilon , max_memories, learn_distance),
     MemorizedLearner(epsilon , max_memories, learn_distance),
     ResidualLearner (epsilon , max_memories, learn_distance),
     VowpalLearner(epsilon=epsilon, seed=seed),

@@ -253,7 +253,7 @@ class CMT_Implemented:
         if self._signal_type == 'se':
             return 1-(prd-obs)**2
 
-        if self._signal_type == 'l1':
+        if self._signal_type == 're':
             deltarvw    = sorted([-1, obs                           , 1])[1]
             deltarcombo = sorted([-1, obs-prd                       , 1])[1]
             rupdate     = sorted([0 , abs(deltarvw)-abs(deltarcombo)   ])[1]
@@ -311,7 +311,7 @@ class MemorizedLearner:
         self.mem.update(context, action, reward)
 
 class ResidualLearner:
-    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, d=1, signal:str = 'l1', router:str ='sk'):
+    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, d=1, signal:str = 're', router:str ='sk'):
 
         self._epsilon = epsilon
         self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
