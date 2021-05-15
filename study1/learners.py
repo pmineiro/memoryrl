@@ -11,7 +11,7 @@ from coba.learners import VowpalLearner
 
 from memory import CMT
 
-logn = None
+logn = 100
 bits = 20
 
 class CMT_Implemented:
@@ -52,7 +52,7 @@ class CMT_Implemented:
             from sklearn.linear_model import SGDClassifier
             
             self.clf  = SGDClassifier(loss="log", average=True)
-            self.hash = FeatureHasher(input_type="pair")
+            self.hash = FeatureHasher(n_features=2**18,input_type="pair")
             self.is_fit = False
 
         def predict(self, xraw): 
@@ -150,7 +150,7 @@ class CMT_Implemented:
             ee[0] = time.time()
 
             ss[1] = time.time()
-            xa      = {**x, **a, **self.outer(x,a) }
+            xa      = {**x     , **a     , **self.outer(x,a)           }
             xaprime = {**xprime, **aprime, **self.outer(xprime,aprime) }
             ee[1] = time.time()
 
