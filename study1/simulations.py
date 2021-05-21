@@ -1,54 +1,10 @@
-import random
-
 from gzip import GzipFile
-from typing import List, Sequence, Dict, Tuple
 
-from coba.data.encoders import OneHotEncoder
-from coba.data.sources import Source
-from coba.simulations import Interaction, Reward, Simulation, MemorySimulation, ClassificationSimulation
-from coba.simulations.core import LambdaSimulation
-from coba.tools.registry import coba_registry_class
+from typing import Tuple
 
-import torch
-
-class MultiLabelReward(Reward):
-
-    def __init__(self, labels: Dict[int,Sequence[int]]) -> None:
-        self._labels = labels
-
-    def observe(self, choices) -> Sequence[float]:
-        rewards = []
-
-        for key,action in choices:
-            rewards.append(float(action in self._labels[key]))
-
-        return rewards
-
-class LibSvmSimulation(Source[Simulation]):
-    
-    def __init__(self, filename) -> None:
-        self._filename = filename
-
-    def read(self) -> Simulation:
-
-        with GzipFile(self._filename, 'r') as fs:
-
-            features = []
-            labels   = []
-
-            for line in fs:
-
-                items = line.decode('utf-8').strip().split(' ')
-
-                label    = int(items[0])
-                splits   = [ i.split(":") for i in items[1:] ]
-                encoded  = [ (int(s[0]), float(s[1])) for s in splits ]
-                sparse   = tuple(zip(*encoded))
-
-                features.append(sparse)
-                labels.append(label)
-
-        return ClassificationSimulation(features, labels)
+from coba.pipes import Source, MemorySource
+from coba.simulations import Simulation, LibsvmSimulation, ManikSimulation, LambdaSimulation
+from coba.registry import coba_registry_class
 
 @coba_registry_class("Mediamill")
 class MediamillSimulation(Source[Simulation]):
@@ -57,31 +13,9 @@ class MediamillSimulation(Source[Simulation]):
     #http://manikvarma.org/downloads/XC/XMLRepository.html
 
     def read(self) -> Simulation:
-
-        interactions       : List[Interaction] = []
-        interactions_labels: Dict[int, Sequence[int]] = {}
-
         with GzipFile("./study1/datasets/Mediamill_data.gz", 'r') as fs:
+            return ManikSimulation(MemorySource([line.decode('utf-8') for line in fs ])).read()
 
-            n_actions = int(next(fs).decode('utf-8').split(' ')[2])
-
-            action_encoder = OneHotEncoder(list(range(n_actions)))
-            actions        = action_encoder.encode(list(range(n_actions)))
-
-            for i,line in enumerate(fs):
-
-                items = line.decode('utf-8').split(' ')
-
-                if items[0] == '': continue
-
-                example_labels   = [ action_encoder.encode([int(l)])[0] for l in items[0].split(',') ]
-                example_features = { int(item.split(":")[0]):float(item.split(":")[1]) for item in items[1:] }
-
-                interactions.append(Interaction(example_features, actions, i))
-                interactions_labels[i] = example_labels
-
-        return MemorySimulation(interactions, MultiLabelReward(interactions_labels))
-    
     def __repr__(self):
         return "mediamill"
 
@@ -108,25 +42,28 @@ class MemorizableSimulation(Source[Simulation]):
         return "memorizable"
 
 @coba_registry_class("Sector")
-class SectorSimulation(LibSvmSimulation):
+class SectorSimulation(Source[Simulation]):
 
     #combination of the train and test sets of the sector dataset
     #https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#sector
 
-    def __init__(self) -> None:
-        super().__init__("./study1/datasets/sector.gz")
+    def read(self) -> Simulation:
+        with GzipFile("./study1/datasets/sector.gz", 'r') as fs:
+            return LibsvmSimulation(MemorySource([line.decode('utf-8') for line in fs ])).read()
     
     def __repr__(self):
         return "sector"
 
 @coba_registry_class("Rcv1")
-class Rcv1Simulation(LibSvmSimulation):
+class Rcv1Simulation(Source[Simulation]):
 
     #the train set of the rcv1.multiclass dataset (train in order to keep the dataset small)
     #https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#rcv1.multiclass
 
-    def __init__(self) -> None:
-        super().__init__("./study1/datasets/rcv1.gz")
+    def read(self) -> Simulation:
+        with GzipFile("./study1/datasets/rcv1.gz", 'r') as fs:
+            return LibsvmSimulation(MemorySource([line.decode('utf-8') for line in fs ])).read()
+
     
     def __repr__(self):
         return "rcv1"
