@@ -72,7 +72,7 @@ class CMT_Implemented:
 
             if isinstance(x[0], tuple):
                 x   = [ (f"x{i}", v) for i,v in zip(*x) ]
-                a   = [ (f"a{i}", v) for i,v in enumerate(a) if v != 0 ]
+                a   = [ (f"a{a}", 1)                    ]
                 xa  = self._flat_outer(x,a)
                 xxa = self._flat_outer(self._flat_outer(x,x),a)
 
@@ -138,15 +138,11 @@ class CMT_Implemented:
                 x      = list(zip(*x))
                 xprime = list(zip(*xprime))
 
-            if len(a) > 0 and not isinstance(a[0],tuple):
-                a      = list(enumerate(a))
-                aprime = list(enumerate(aprime))
-
             x      = { "x"+str(key):value for key,value in x if value != 0}
-            a      = { "a"+str(key):value for key,value in a if value != 0 }
+            a      = { "a"+str(a  ):1                                     }
 
-            xprime = { "x"+str(key):value for key,value in xprime if value != 0}
-            aprime = { "a"+str(key):value for key,value in aprime if value != 0 }
+            xprime = { "x"+str(key   ):value for key,value in xprime if value != 0}
+            aprime = { "a"+str(aprime):1                                          }
             ee[0] = time.time()
 
             ss[1] = time.time()
@@ -191,19 +187,14 @@ class CMT_Implemented:
                     xprime = list(zip(*xprime))
                     xpp    = list(zip(*xpp))
 
-                if len(a) > 0 and not isinstance(a[0],tuple):
-                    a      = enumerate(a)
-                    aprime = enumerate(aprime)
-                    app    = enumerate(app)
-
                 x      = { "x"+str(key):value for key,value in x if value != 0 }
-                a      = { "a"+str(key):value for key,value in a if value != 0 }
+                a      = { "a"+str(a  ):1                                      }
 
-                xprime = { "x"+str(key):value for key,value in xprime if value != 0 }
-                aprime = { "a"+str(key):value for key,value in aprime if value != 0 }
+                xprime = { "x"+str(key   ):value for key,value in xprime if value != 0 }
+                aprime = { "a"+str(aprime):1                                           }
 
                 xpp = { "x"+str(key):value for key,value in xpp if value != 0 }
-                app = { "a"+str(key):value for key,value in app if value != 0 }
+                app = { "a"+str(app):1                                        }
 
                 xa      = {**x, **a, **self.outer(x,a) }
                 xaprime = {**xprime, **aprime, **self.outer(xprime,aprime) }
@@ -296,6 +287,8 @@ class FullFeedbackLearner:
 
         self._times = [0, 0]
 
+        self._actions = {}
+
     def init(self):
         self.mem.init()
 
@@ -346,7 +339,6 @@ class FullFeedbackLearner:
                 raise Exception("We were unable to associate a simulation with the observed action set.")
 
         ga   = actions.index(self._fixed_actions[action_one_hot.argmax()])
-        #ga = actions.index(self._full_reward._labels[key])
         minp = self._epsilon / len(self._fixed_actions)
 
         self._times[0] += time.time()-predict_start
@@ -362,15 +354,9 @@ class FullFeedbackLearner:
 
         learn_start = time.time()
 
-        try:
-            true_label = self._full_reward._labels[key]
-            true_one_hot = np.zeros(len(self._fixed_actions))
-            true_one_hot[self._fixed_actions.index(true_label)] = 1
+        true_one_hot = np.array(self._full_reward.observe([(key,context,a) for a in self._fixed_actions]))
 
-            assert reward == int(action == true_label)
-        
-        except:
-            true_one_hot = np.array([ self._full_reward._rewards[(key,action)] for action in self._fixed_actions ])
+        assert sum(true_one_hot) == 1, "Something is wrong with full feedback."
 
         self.mem.update(context, (), true_one_hot)
 
