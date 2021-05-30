@@ -275,7 +275,7 @@ class CMT_Implemented:
 
         raise Exception(f"Unrecognized signal type: {self._signal_type}")
 
-class FullFeedbackLearner:
+class FullFeedbackMemLearner:
     def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, d=1, signal:str = 'se', router: str = 'sk'):
         self._epsilon = epsilon
         self._i       = 0
@@ -361,6 +361,96 @@ class FullFeedbackLearner:
         self.mem.update(context, (), true_one_hot)
 
         self._times[1] += time.time()-learn_start
+
+class FullFeedbackVowpalLearner:
+    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, d=1, signal:str = 'se', router: str = 'sk'):
+        self._epsilon = epsilon
+        self._i       = 0
+
+        self._full_reward   = None
+        self._fixed_actions = None
+
+        self._times = [0, 0]
+
+        self._actions = {}
+        self._vw = None
+
+    @property
+    def family(self) -> str:
+        return "VW_FullFeedback"
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return { 'e':self._epsilon }
+
+    def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
+        """Choose which action index to take."""
+
+        if self._vw is None:
+            from vowpalwabbit import pyvw
+            self._vw = pyvw.vw(f"--quiet --oaa {len(actions)} --interactions xx -b {bits}")
+
+        predict_start = time.time()
+
+        self._fixed_actions = self._fixed_actions or actions
+        self._i += 1
+
+        #print(action_one_hot)
+
+        if self._full_reward is None:
+            import coba.simulations
+            import simulations
+            
+            if len(self._fixed_actions) == 3:
+                self._full_reward = simulations.MemorizableSimulation().read().reward
+
+            if len(self._fixed_actions) == 26:
+                self._full_reward = coba.simulations.OpenmlSimulation(6).read().reward
+
+            if len(self._fixed_actions) == 2:
+                self._full_reward = coba.simulations.OpenmlSimulation(1471).read().reward
+
+            if len(self._fixed_actions) == 1000:
+                self._full_reward = coba.simulations.OpenmlSimulation(1592).read().reward
+            
+            if len(self._fixed_actions) == 51:
+                self._full_reward = simulations.Rcv1Simulation().read().reward
+
+            if len(self._fixed_actions) == 105:
+                self._full_reward = simulations.SectorSimulation().read().reward
+
+            if self._full_reward is None:
+                raise Exception("We were unable to associate a simulation with the observed action set.")
+
+        ga   = actions.index(self._fixed_actions[self._vw.predict(f"|x {self._vw_features(context)}")-1])
+        minp = self._epsilon / len(self._fixed_actions)
+
+        self._times[0] += time.time()-predict_start
+
+        if logn and self._i % logn == 0:
+           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+
+        return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(self._fixed_actions)) ]
+
+    def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
+        """Learn about the result of an action that was taken in a context."""        
+
+        learn_start = time.time()
+
+        true_one_hot = np.array(self._full_reward.observe([(key,context,a) for a in self._fixed_actions]))
+
+        assert sum(true_one_hot) == 1, "Something is wrong with full feedback."
+
+        self._vw.learn(f"{true_one_hot.argmax()+1} |x {self._vw_features(context)}")
+
+        self._times[1] += time.time()-learn_start
+
+    def _vw_features(self, context) -> str:
+        if len(context) == 2 and isinstance(context[0],tuple) and isinstance(context[1],tuple):
+            return " ".join([f"{k}:{v}" for k,v in zip(*context) ])
+        else:
+            return " ".join([f"{v}" for v in context])
 
 class MemorizedLearner:
     
