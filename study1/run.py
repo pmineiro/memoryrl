@@ -13,7 +13,6 @@ from coba.learners import VowpalLearner, UcbBanditLearner
 
 experiment       = "large"
 processes        = 8
-maxtasksperchild = None
 seed             = 10
 ignore_raise     = False
 
