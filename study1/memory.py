@@ -1,3 +1,6 @@
+from math import log
+from heapq import heappush, heappop
+
 class CMT:
     class Node:
         def __init__(self, parent, left=None, right=None, g=None):
@@ -71,7 +74,6 @@ class CMT:
             self.n = 0
 
         def add(self, x):
-            from heapq import heappush
 
             assert x not in self.entry_finder
 
@@ -87,8 +89,6 @@ class CMT:
             return x in self.entry_finder
 
         def peek(self):
-            from heapq import heappop
-
             while self.entry_finder.get(self.entries[0][1], -1) != self.entries[0][0]:
                 heappop(self.entries)
 
@@ -163,8 +163,6 @@ class CMT:
                         self.keyslru.remove(z[0][0])
                         self.keyslru.add(z[0][0])
             else:
-                from math import log
-
                 rhat = (r/p) * (1 if a == v.right else -1)
                 B = log(1e-2 + v.left.n) - log(1e-2 + v.right.n)
                 y = (1 - self.alpha) * rhat + self.alpha * B
@@ -214,8 +212,6 @@ class CMT:
             v = v.parent
 
     def __insertLeaf(self, x, omega, v):
-        from math import log
-
         assert v.isLeaf
 
         if x not in self.allkeysindex:
@@ -254,8 +250,7 @@ class CMT:
                 self.f.update(x, z, 1)
 
     def insert(self, x, omega, v=None):
-        from math import log
-
+        
         if x in self.leafbykey:
             # duplicate memory ... need to merge values ...
             assert False

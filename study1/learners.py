@@ -7,11 +7,12 @@ from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union
 
 import numpy as np
 
+from coba.config import CobaConfig
 from coba.learners import VowpalLearner
 
 from memory import CMT
 
-logn = 100
+logn = 1000
 bits = 20
 
 class CMT_Implemented:
@@ -55,36 +56,15 @@ class CMT_Implemented:
             self.hash = FeatureHasher(n_features=2**18,input_type="pair")
             self.is_fit = False
 
-        def predict(self, xraw): 
-            if self.is_fit:
-                return self.clf.predict(self._domain(*xraw))[0]
-            else:
-                return 1
+        def predict(self, X): 
+            return 1 if not self.is_fit else self.clf.predict(self._domain(X))[0]
 
-        def update(self, xraw, y, w):
+        def update(self, X, y, w):
             self.is_fit = True
-            self.clf.partial_fit(self._domain(*xraw), [y], sample_weight=[w], classes=[-1,1])
+            self.clf.partial_fit(self._domain(X), [y], sample_weight=[w], classes=[-1,1])
         
-        def _flat_outer(self, vec1: Sequence[Tuple[str,float]], vec2: Sequence[Tuple[str,float]]) -> Sequence[Tuple[str,float]]:
-            return [ (key1+'_'+key2, val1*val2) for key1,val1 in vec1 for key2,val2 in vec2 ]
-
-        def _domain(self, x, a):
-
-            if isinstance(x[0], tuple):
-                x   = [ (f"x{i}", v) for i,v in zip(*x) ]
-                a   = [ (f"a{a}", 1)                    ]
-                xa  = self._flat_outer(x,a)
-                xxa = self._flat_outer(self._flat_outer(x,x),a)
-
-                features = self.hash.transform([x+a+xa+xxa])
-            else:
-                x = list(x)
-                a = list(a)
-                xa = np.outer(x,a).flatten().tolist()
-                xxa = np.outer(np.outer(x,x),a).flatten().tolist()
-                features = [x+a+xa+xxa]
-
-            return features
+        def _domain(self, X):
+            return self.hash.transform([X]) if isinstance(X[0], tuple) else X
 
     class LearnedEuclideanDistance:
 
@@ -96,167 +76,106 @@ class CMT_Implemented:
             self.tt    = [0]*6
             self.learn = learn
 
-        def outer(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> Dict[str,float]:
-            return { key1+'_'+key2: val1*val2 for key1,val1 in vec1.items() for key2,val2 in vec2.items() }
-
-        def diff(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> Dict[str,float]:
-            
-            diff = {}
-            
-            for key in set(vec1.keys()) | set(vec2.keys()):
-                if key in vec1 and key in vec2:
-                    diff[key] = vec1[key]-vec2[key]
-                elif key in vec1:
-                    diff[key] = vec1[key]
-                else:
-                    diff[key] = -vec2[key]
-
-            return diff
+        def diff(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> Dict[str,float]:            
+            return { key: vec1.get(key,0)-vec2.get(key,0) for key in set(vec1.keys()) | set(vec2.keys()) if vec1.get(key,0)-vec2.get(key,0) != 0 }
 
         def inner(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> float:
-
-            keys = set(vec1.keys()) & set(vec2.keys())
-
-            return sum([ vec1[key]*vec2[key] for key in keys ])
+            return sum([ vec1[key]*vec2[key] for key in set(vec1.keys()) & set(vec2.keys()) ])
 
         def predict(self, xraw, z):
 
             ss = [0]*6
             ee = [0]*6
 
-            xprimeraw = z[0]
-
-            (x     , a     ) = xraw
-            (xprime, aprime) = xprimeraw
-
-            ss[0] = time.time()
-            
-            if not isinstance(x[0],tuple):
-                x      = list(enumerate(x))
-                xprime = list(enumerate(xprime))
-            else:
-                x      = list(zip(*x))
-                xprime = list(zip(*xprime))
-
-            x      = { "x"+str(key):value for key,value in x if value != 0}
-            a      = { "a"+str(a  ):1                                     }
-
-            xprime = { "x"+str(key   ):value for key,value in xprime if value != 0}
-            aprime = { "a"+str(aprime):1                                          }
-            ee[0] = time.time()
-
-            ss[1] = time.time()
-            xa      = {**x     , **a     , **self.outer(x,a)           }
-            xaprime = {**xprime, **aprime, **self.outer(xprime,aprime) }
-            ee[1] = time.time()
+            X  = dict(xraw) #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+            Xp = dict(z[0]) #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
 
             ss[2] = time.time()
-            dxa = self.diff(xa,xaprime)
+            dp = self.diff(X,Xp)
             ee[2] = time.time()
 
             ss[3] = time.time()
-            dxa_dot_dxa = self.inner(dxa, dxa)                            
+            dp_dot_dp = self.inner(dp,dp) 
             ee[3] = time.time()
 
             ss[4] = time.time()
-            if self.vw:
-                v = -0.01 * dxa_dot_dxa + self.vw.predict(f' |x ' + ' '.join([f'{k}:{round(v*v,6)}' for k,v in dxa.items()]))
-            else:
-                v = -0.01 * dxa_dot_dxa
+            initial    = -0.01 * dp_dot_dp
+            prediction = 0 if not self.vw else self.vw.predict(f' |x ' + ' '.join([f'{k}:{round(v**2,6)}' for k,v in dp.items()]))
             ee[4] = time.time()
 
             for i,s,e in zip(count(),ss,ee):
                 self.tt[i] += e-s
 
-            return v
+            return initial + prediction
 
         def update(self, xraw, z, r):
             if not self.vw: return
 
             if r > 0 and len(z) > 1:
-                (x     , a     ) = xraw
-                (xprime, aprime) = z[0][0]
-                (xpp   , app   ) = z[1][0]
+                X   = dict(xraw)    #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+                Xp  = dict(z[0][0]) #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+                Xpp = dict(z[1][0]) #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
                 
-                if not isinstance(x[0],tuple):
-                    x      = enumerate(x)
-                    xprime = enumerate(xprime)
-                    xpp    = enumerate(xpp)
-                else:
-                    x      = list(zip(*x))
-                    xprime = list(zip(*xprime))
-                    xpp    = list(zip(*xpp))
+                dp  = self.diff(X, Xp)
+                dpp = self.diff(X, Xpp)
 
-                x      = { "x"+str(key):value for key,value in x if value != 0 }
-                a      = { "a"+str(a  ):1                                      }
+                initial = 0.01 * (self.inner(dp,dp) - self.inner(dpp,dpp))
 
-                xprime = { "x"+str(key   ):value for key,value in xprime if value != 0 }
-                aprime = { "a"+str(aprime):1                                           }
+                keys     = dp.keys() | dpp.keys()
+                features = [f'{key}:{round(dp.get(key,0)**2-dpp.get(key,0)**2,6)}' for key in keys]
 
-                xpp = { "x"+str(key):value for key,value in xpp if value != 0 }
-                app = { "a"+str(app):1                                        }
+                self.vw.learn(f'1 {r} {initial} |x ' + ' '.join(features))
 
-                xa      = {**x, **a, **self.outer(x,a) }
-                xaprime = {**xprime, **aprime, **self.outer(xprime,aprime) }
-                xapp    = {**xpp, **app, **self.outer(xpp,app) }
+    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk', c=10, d=1) -> None:
 
-                dxa  = self.diff(xa, xaprime)
-                dxap = self.diff(xa, xapp)
-
-                initial = 0.01 * (self.inner(dxa,dxa) - self.inner(dxap,dxap))
-
-                keys = set(dxa.keys()) & set(dxap.keys())
-
-                ex = f'1 {r} {initial} |x ' + ' '.join([f'{key}:{round(dxa[key]**2-dxap[key]**2,6)}' for key in keys])
-                self.vw.learn(ex)
-
-    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk', d=1) -> None:
-
-        self._learn_dist   = learn_dist
         self._max_memories = max_memories
+        self._learn_dist   = learn_dist
         self._signal_type  = signal_type
         self._router_type  = router_type
-        self._d = d
+        self._c            = c
+        self._d            = d
 
-    @property
-    def params(self):
-        return { 'm': self._max_memories, 'b': bits, 'ld': self._learn_dist, 'sig': self._signal_type, 'rt': self._router_type, 'd': self._d }
-
-    def init(self):
         router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
         
         scorer         = CMT_Implemented.LearnedEuclideanDistance(self._learn_dist)
         random_state   = random.Random(1337)
         ords           = random.Random(2112)
 
-        self.mem = CMT(router_factory, scorer, alpha=0.25, c=10, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
+        self.mem = CMT(router_factory, scorer, alpha=0.25, c=self._c, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
+
+    @property
+    def params(self):
+        return { 'm': self._max_memories, 'b': bits, 'ld': self._learn_dist, 'sig': self._signal_type, 'rt': self._router_type, 'd': self._d, 'c': self._c }
+
+    def __reduce__(self) -> Union[str, Tuple[Any, ...]]:
+        return(CMT_Implemented, (self._max_memories, self._learn_dist, self._signal_type, self._router_type, self._c, self._d) )
 
     def query(self, context: Hashable, actions: Sequence[Hashable], default = None):
         
-        results = []
+        memories = []
 
         for action in actions:
-            (_, z) = self.mem.query((context,action), 1, 0)
-            results.append(z[0][1] if len(z) > 0 else default)
+            trigger = self._mem_key(context, action)
+            (_, z) = self.mem.query(trigger, 1, 0)
+            memories.append(z[0][1] if len(z) > 0 else default)
 
-        return results
+        return memories
 
-    def update(self, context: Hashable, action: Hashable, observation: Union[float, np.ndarray]):
+    def update(self, context: Hashable, action: Hashable, memory: Union[float, np.ndarray]):
 
-        memory_trigger = (context, action)
-
-        (u,z) = self.mem.query(memory_trigger, k=2, epsilon=1)
+        trigger = self._mem_key(context, action)
+        (u,z) = self.mem.query(trigger, k=2, epsilon=1)
 
         if len(z) > 0:
-            memory = z[0][1] + 0.1 * ( observation-z[0][1] )
+            updated_memory = z[0][1] + 0.1 * ( memory-z[0][1] )
 
-            self.mem.updateomega(z[0][0], memory)
-            self.mem.update(u, memory_trigger, z, self._error_signal(observation, memory))
+            self.mem.updateomega(z[0][0], updated_memory)
+            self.mem.update(u, trigger, z, self._error_signal(memory, updated_memory))
 
-        if memory_trigger in self.mem.leafbykey:
-            self.mem.delete(memory_trigger)
+        if trigger in self.mem.leafbykey:
+            self.mem.delete(trigger)
 
-        self.mem.insert(memory_trigger, observation)
+        self.mem.insert(trigger, memory)
 
     def _error_signal(self, obs, prd):
 
@@ -275,12 +194,42 @@ class CMT_Implemented:
 
         raise Exception(f"Unrecognized signal type: {self._signal_type}")
 
+    def _mem_key(self, context, action):
+
+        if isinstance(context, str):
+            x  = { context: 1 }
+        elif isinstance(context, dict):
+            x  = context
+        else:
+            x  = np.array(context) if isinstance(context,tuple) else np.array([context])
+            
+        if isinstance(action, str):
+            a = {action:1}
+        elif isinstance(action, dict):
+            a = action
+        else:
+            a  = np.array(action)  if isinstance(action,tuple) else np.array([action])
+
+        if not isinstance(x,dict) and not isinstance(a,dict):
+            xx = np.outer(x,x)[np.triu_indices(len(x))]
+            xa = np.outer(x,a).flatten()
+            xxa = np.outer(xx,a).flatten()
+            return tuple(np.concatenate([x, a, xa, xxa]).tolist())
+        else:
+            x  = [ (f"x{k}",v) for k,v in x.items() ] if isinstance(x,dict) else [ (f"x{i}",v) for i,v in enumerate(x) ]
+            a  = [ (f"a{k}",v) for k,v in a.items() ] if isinstance(a,dict) else [ (f"a{i}",v) for i,v in enumerate(a) ]
+            xx = [ (x[i][0]+x[j][0],x[i][1]*x[j][1]) for i in range(len(x)) for j in range(i+1) ]
+
+            xa  = [ (key1+key2,val1*val2) for key1,val1 in x  for key2,val2 in a ]
+            xxa = [ (key1+key2,val1*val2) for key1,val1 in xx for key2,val2 in a ]
+
+            return tuple(x+xx) if not a else tuple(x+a+xa+xxa)
+
 class FullFeedbackMemLearner:
-    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, d=1, signal:str = 'se', router: str = 'sk'):
-        self._epsilon = epsilon
+    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, c=10, d=1, signal:str = 'se', router: str = 'sk'):
         self._i       = 0
 
-        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, c=c, d=d)
 
         self._full_reward = None
         self._fixed_actions = None
@@ -298,20 +247,20 @@ class FullFeedbackMemLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'e':self._epsilon,  **self.mem.params }
+        return self.mem.params
 
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
 
         predict_start = time.time()
-
+        
         self._fixed_actions = self._fixed_actions or actions
         self._i += 1
 
         default_action = np.array([1] + [0]*(len(self._fixed_actions)-1))
         action_one_hot = self.mem.query(context, [()], default=default_action)[0]
 
-        #print(action_one_hot)
+        self._times[0] += time.time()-predict_start
 
         if self._full_reward is None:
             import coba.simulations
@@ -339,15 +288,12 @@ class FullFeedbackMemLearner:
                 raise Exception("We were unable to associate a simulation with the observed action set.")
 
         ga   = actions.index(self._fixed_actions[action_one_hot.argmax()])
-        minp = self._epsilon / len(self._fixed_actions)
-
-        self._times[0] += time.time()-predict_start
 
         if logn and self._i % logn == 0:
-           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+           print(f"CMT {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"CMT {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
-        return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(self._fixed_actions)) ]
+        return [ 0 if i != ga else 1 for i in range(len(self._fixed_actions)) ]
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""        
@@ -360,12 +306,11 @@ class FullFeedbackMemLearner:
 
         self.mem.update(context, (), true_one_hot)
 
-        self._times[1] += time.time()-learn_start
+        self._times[1] += time.time()-learn_start        
 
 class FullFeedbackVowpalLearner:
-    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, d=1, signal:str = 'se', router: str = 'sk'):
-        self._epsilon = epsilon
-        self._i       = 0
+    def __init__(self):
+        self._i = 0
 
         self._full_reward   = None
         self._fixed_actions = None
@@ -381,7 +326,7 @@ class FullFeedbackVowpalLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'e':self._epsilon }
+        return { }
 
     def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -394,8 +339,6 @@ class FullFeedbackVowpalLearner:
 
         self._fixed_actions = self._fixed_actions or actions
         self._i += 1
-
-        #print(action_one_hot)
 
         if self._full_reward is None:
             import coba.simulations
@@ -422,16 +365,15 @@ class FullFeedbackVowpalLearner:
             if self._full_reward is None:
                 raise Exception("We were unable to associate a simulation with the observed action set.")
 
-        ga   = actions.index(self._fixed_actions[self._vw.predict(f"|x {self._vw_features(context)}")-1])
-        minp = self._epsilon / len(self._fixed_actions)
+        ga = actions.index(self._fixed_actions[self._vw.predict(f"|x {self._vw_features(context)}")-1])
 
         self._times[0] += time.time()-predict_start
 
         if logn and self._i % logn == 0:
-           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+           print(f"VW {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"VW {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
-        return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(self._fixed_actions)) ]
+        return [ 0 if i != ga else 1 for i in range(len(self._fixed_actions)) ]
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""        
