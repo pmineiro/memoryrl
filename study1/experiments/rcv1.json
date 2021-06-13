@@ -1,0 +1,5 @@
+{
+    "simulations": [ 
+        [ "Rcv1", { "Shuffle": [111,222,333], "method": "foreach" }, {"Take": 15000 } ] 
+    ]
+}

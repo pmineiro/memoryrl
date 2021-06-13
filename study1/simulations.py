@@ -28,13 +28,13 @@ class MemorizableSimulation(Source[Simulation]):
         contexts = [(0,), (1,), (2,)]
         actions  = [ (1, 0, 0), (0, 1, 0), (0, 0, 1) ]
 
-        def context_generator(rng: CobaRandom, index:int):
+        def context_generator(index:int):
             return contexts[index%3]
         
-        def action_generator(rng: CobaRandom, index:int, context:Tuple[float,...]):
+        def action_generator(index:int, context:Tuple[float,...]):
             return actions
 
-        def reward_function(rng: CobaRandom, index:int, context:Tuple[float,...], action: Tuple[int,...]):
+        def reward_function(index:int, context:Tuple[float,...], action: Tuple[int,...]):
             return float( actions[context[0]] == action)
 
         return LambdaSimulation(10000, context_generator, action_generator, reward_function).read()

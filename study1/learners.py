@@ -7,12 +7,11 @@ from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union
 
 import numpy as np
 
-from coba.config import CobaConfig
 from coba.learners import VowpalLearner
 
 from memory import CMT
 
-logn = 1000
+logn = 500
 bits = 20
 
 class CMT_Implemented:
@@ -126,7 +125,7 @@ class CMT_Implemented:
 
                 self.vw.learn(f'1 {r} {initial} |x ' + ' '.join(features))
 
-    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk', c=10, d=1) -> None:
+    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk', c=10, d=1, megalr=0.1) -> None:
 
         self._max_memories = max_memories
         self._learn_dist   = learn_dist
@@ -134,6 +133,7 @@ class CMT_Implemented:
         self._router_type  = router_type
         self._c            = c
         self._d            = d
+        self._megalr       = megalr
 
         router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
         
@@ -145,19 +145,19 @@ class CMT_Implemented:
 
     @property
     def params(self):
-        return { 'm': self._max_memories, 'b': bits, 'ld': self._learn_dist, 'sig': self._signal_type, 'rt': self._router_type, 'd': self._d, 'c': self._c }
+        return { 'm': self._max_memories, 'b': bits, 'ld': self._learn_dist, 'sig': self._signal_type, 'rt': self._router_type, 'd': self._d, 'c': self._c, 'mlr': self._megalr }
 
     def __reduce__(self) -> Union[str, Tuple[Any, ...]]:
         return(CMT_Implemented, (self._max_memories, self._learn_dist, self._signal_type, self._router_type, self._c, self._d) )
 
-    def query(self, context: Hashable, actions: Sequence[Hashable], default = None):
+    def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
         
         memories = []
 
         for action in actions:
             trigger = self._mem_key(context, action)
-            (_, z) = self.mem.query(trigger, 1, 0)
-            memories.append(z[0][1] if len(z) > 0 else default)
+            (_, z) = self.mem.query(trigger, topk, 0)
+            memories.extend([ zz[1] for zz in z ] or [default])
 
         return memories
 
@@ -167,7 +167,7 @@ class CMT_Implemented:
         (u,z) = self.mem.query(trigger, k=2, epsilon=1)
 
         if len(z) > 0:
-            updated_memory = z[0][1] + 0.1 * ( memory-z[0][1] )
+            updated_memory = z[0][1] + self._megalr * ( memory-z[0][1] )
 
             self.mem.updateomega(z[0][0], updated_memory)
             self.mem.update(u, trigger, z, self._error_signal(memory, updated_memory))
@@ -214,7 +214,7 @@ class CMT_Implemented:
             xx = np.outer(x,x)[np.triu_indices(len(x))]
             xa = np.outer(x,a).flatten()
             xxa = np.outer(xx,a).flatten()
-            return tuple(np.concatenate([x, a, xa, xxa]).tolist())
+            return tuple((f"x{i}",f) for i,f in enumerate(np.concatenate([x, a, xa, xxa]).tolist()))
         else:
             x  = [ (f"x{k}",v) for k,v in x.items() ] if isinstance(x,dict) else [ (f"x{i}",v) for i,v in enumerate(x) ]
             a  = [ (f"a{k}",v) for k,v in a.items() ] if isinstance(a,dict) else [ (f"a{i}",v) for i,v in enumerate(a) ]
@@ -235,11 +235,6 @@ class FullFeedbackMemLearner:
         self._fixed_actions = None
 
         self._times = [0, 0]
-
-        self._actions = {}
-
-    def init(self):
-        self.mem.init()
 
     @property
     def family(self) -> str:
@@ -290,8 +285,8 @@ class FullFeedbackMemLearner:
         ga   = actions.index(self._fixed_actions[action_one_hot.argmax()])
 
         if logn and self._i % logn == 0:
-           print(f"CMT {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"CMT {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         return [ 0 if i != ga else 1 for i in range(len(self._fixed_actions)) ]
 
@@ -317,7 +312,6 @@ class FullFeedbackVowpalLearner:
 
         self._times = [0, 0]
 
-        self._actions = {}
         self._vw = None
 
     @property
@@ -370,8 +364,8 @@ class FullFeedbackVowpalLearner:
         self._times[0] += time.time()-predict_start
 
         if logn and self._i % logn == 0:
-           print(f"VW {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"VW {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         return [ 0 if i != ga else 1 for i in range(len(self._fixed_actions)) ]
 
@@ -394,19 +388,75 @@ class FullFeedbackVowpalLearner:
         else:
             return " ".join([f"{v}" for v in context])
 
+class MemorizedIpsLearner:
+    def __init__(self, epsilon:float, max_memories: int = 1000, learn_dist: bool = True, c=10, d=1, signal:str = 'se', router: str = 'sk', topk:int=10):
+        self._i = 0
+
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, c=c, d=d, megalr=0)
+
+        assert c >= 40, "We take top 40 so increase c"
+
+        self._epsilon = epsilon
+        self._topk = topk
+        self._fixed_actions = None
+
+        self._times = [0, 0]
+
+    @property
+    def family(self) -> str:
+        return "CMT_MemorizedIPS"
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return {'e': self._epsilon, **self.mem.params, 'k': self._topk }
+
+    def predict(self, key: int, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
+        """Choose which action index to take."""
+
+        predict_start = time.time()
+
+        self._fixed_actions = self._fixed_actions or actions
+        self._i += 1
+
+        default_action = np.array([0]*len(self._fixed_actions))
+        action_one_hot = np.stack(self.mem.query(context, [()], topk=self._topk, default=default_action)).mean(axis=0)
+
+        max_indexes = np.argwhere(action_one_hot==action_one_hot.max()).flatten().tolist()
+
+        ga   = [actions.index(self._fixed_actions[mi]) for mi in max_indexes ]
+        minp = self._epsilon / len(actions)
+
+        self._times[0] += time.time()-predict_start
+
+        if logn and self._i % logn == 0:
+           print(f"IPS {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"IPS {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+
+        probs = [ minp if i not in ga else minp+(1-self._epsilon)/len(ga) for i in range(len(actions)) ]
+
+        assert round(sum(probs),2) == 1, "ERROR"
+
+        return probs
+
+    def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
+        """Learn about the result of an action that was taken in a context."""        
+
+        learn_start = time.time()        
+
+        self.mem.update(context, (), np.array([int(action==a)*reward/probability for a in self._fixed_actions]))
+
+        self._times[1] += time.time()-learn_start        
+
 class MemorizedLearner:
     
-    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, d=1, signal:str = 'se', router: str = 'sk') -> None:
+    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, c=10, d=1, signal:str = 'se', router: str = 'sk') -> None:
 
         self._epsilon = epsilon
         self._i       = 0
 
-        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, c=c, d=d)
 
         self._times = [0, 0]
-
-    def init(self):
-        self.mem.init()
 
     @property
     def family(self) -> str:
@@ -434,34 +484,39 @@ class MemorizedLearner:
         self._times[0] += time.time()-predict_start
 
         if logn and self._i % logn == 0:
-           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+           print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(actions)) ]
 
     def learn(self, key: int, context: Hashable, action: Hashable, reward: float, probability: float) -> None:
         """Learn about the result of an action that was taken in a context."""
         learn_start = time.time()
-        
         self.mem.update(context, action, reward)
-        
         self._times[1] += time.time()-learn_start
 
 class ResidualLearner:
-    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool, d=1, signal:str = 're', router:str ='sk'):
+    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool = True, c=10, d=1, signal:str = 're', router:str ='sk'):
+
+        from vowpalwabbit import pyvw
 
         self._epsilon = epsilon
-        self.mem      = CMT_Implemented(max_memories, learn_dist, signal, router, d=d)
+        self._max_memories = max_memories
+        self._learn_dist = learn_dist
+        self._c = c
+        self._d = d
+        self._signal = signal
+        self._router = router
+        
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, c=c, d=d)
+        self.vw  = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s')
 
         self._i        = 0
         self._predicts = {}
         self._times    = [0,0]
 
-    def init(self):
-        from vowpalwabbit import pyvw
-
-        self.mem.init()
-        self.vw = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s')
+    def __reduce__(self):
+        return (ResidualLearner,(self._epsilon, self._max_memories, self._learn_dist, self._c, self._d, self._signal, self._router))
 
     @property
     def family(self) -> str:
@@ -503,8 +558,8 @@ class ResidualLearner:
         self._times[0] += time.time()-predict_start
 
         if logn and self._i % logn == 0:
-           print(f"{self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"{self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+           print(f"RES {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"RES {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(actions)) ]
 
@@ -602,10 +657,6 @@ class CorralRejection:
         See the base class for more information
         """        
         return {"eta": self._eta_init, "f":self._fix_count, "B": [ b.family for b in self._base_learners ] }
-
-    def init(self) -> None:
-        for learner in self._base_learners:
-            learner.init()
 
     def predict(self, key, context, actions) -> Sequence[float]:
         """Determine a PMF with which to select the given actions.
@@ -794,10 +845,6 @@ class CorralEnsemble:
         See the base class for more information
         """        
         return {"eta": self._eta_init, "f":self._fix_count, "B": [ b.family for b in self._base_learners ] }
-
-    def init(self) -> None:
-        for learner in self._base_learners:
-            learner.init()
 
     def predict(self, key, context, actions) -> Sequence[float]:
         """Determine a PMF with which to select the given actions.
