@@ -1,4 +1,0 @@
-{
-    "cacher"   : { "DiskCacher": "./.coba_cache/" },
-    "benchmark": { "processes": 1, "chunk_by":"task" }
-}

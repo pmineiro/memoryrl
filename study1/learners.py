@@ -3,11 +3,11 @@ import random
 import math
 
 from itertools import count
-from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union
+from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union, List
 
 import numpy as np
 
-from coba.learners import VowpalLearner
+from coba.learners import VowpalLearner, Learner
 
 from memory import CMT
 
@@ -451,6 +451,9 @@ class MemorizedLearner:
     
     def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, c=10, d=1, signal:str = 'se', router: str = 'sk') -> None:
 
+        assert 0 <= epsilon and epsilon <= 1
+        assert 1 <= max_memories
+
         self._epsilon = epsilon
         self._i       = 0
 
@@ -497,6 +500,9 @@ class MemorizedLearner:
 
 class ResidualLearner:
     def __init__(self, epsilon: float, max_memories: int, learn_dist: bool = True, c=10, d=1, signal:str = 're', router:str ='sk'):
+
+        assert 0 <= epsilon and epsilon <= 1
+        assert 1 <= max_memories
 
         from vowpalwabbit import pyvw
 
@@ -784,6 +790,7 @@ class CorralEnsemble:
 
     def __init__(self,
         max_memories: int,
+        learn_distance: bool,
         epsilon: float,
         eta : float,
         fix_count: int = None,
@@ -803,9 +810,7 @@ class CorralEnsemble:
             modify this algorithm so as to use rejection sampling while being as efficient as importance sampling.
         """
 
-        learn_distance = True
-
-        self._base_learners = [
+        self._base_learners: Sequence[Learner] = [
             MemorizedLearner(epsilon, max_memories, learn_distance),
             ResidualLearner(epsilon, max_memories, learn_distance),
             VowpalLearner(epsilon=epsilon,seed=seed)
@@ -900,7 +905,7 @@ class CorralEnsemble:
 
         self._base_learners[0].learn(key, context, action, reward, probability)
         if picked_i == 1: self._base_learners[1].learn(key, context, action, reward, probability)
-        self._base_learners[2].learn(key, context, action, reward, probability*picked_p)
+        self._base_learners[2].learn(key, context, action, reward, probability)
 
         if self._fix_count is None or self._learn_count < self._fix_count:
             self._ps     = list(self._log_barrier_omd([ loss/picked_p * int(i==picked_i) for i in range(len(self._base_learners)) ]))
@@ -912,6 +917,214 @@ class CorralEnsemble:
                     self._etas[i] *= self._beta
 
     def _log_barrier_omd(self, losses) -> Sequence[float]:
+
+        f  = lambda l: float(sum( [ 1/((1/p) + eta*(loss-l)) for p, eta, loss in zip(self._ps, self._etas, losses)]))
+        df = lambda l: float(sum( [ eta/((1/p) + eta*(loss-l))**2 for p, eta, loss in zip(self._ps, self._etas, losses)]))
+
+        denom_zeros = [ ((-1/p)-(eta*loss))/-eta for p, eta, loss in zip(self._ps, self._etas, losses) ]
+
+        min_loss = min(losses)
+        max_loss = max(losses)
+
+        precision = 4
+
+        def newtons_zero(l,r) -> Optional[float]:
+            """Use Newton's method to calculate the root."""
+            
+            #depending on scales this check may fail though that seems unlikely
+            if (f(l+.0001)-1) * (f(r-.00001)-1) >= 0:
+                return None
+
+            i = 0
+            x = (l+r)/2
+
+            while True:
+                i += 1
+
+                if df(x) == 0:
+                    raise Exception(f'Something went wrong in Corral (0) {self._ps}, {self._etas}, {losses}, {x}')
+
+                x -= (f(x)-1)/df(x)
+
+                if round(f(x),precision) == 1:
+                    return x
+
+                if (i % 30000) == 0:
+                    print(i)
+
+        lmbda: Optional[float] = None
+
+        if min_loss == max_loss:
+            lmbda = min_loss
+        elif min_loss not in denom_zeros and round(f(min_loss),precision) == 1:
+            lmbda = min_loss
+        elif max_loss not in denom_zeros and round(f(max_loss),precision) == 1:
+            lmbda = max_loss
+        else:
+            brackets = list(sorted(filter(lambda z: min_loss <= z and z <= max_loss, set(denom_zeros + [min_loss, max_loss]))))
+
+            for l_brack, r_brack in zip(brackets[:-1], brackets[1:]):
+                lmbda = newtons_zero(l_brack, r_brack)
+                if lmbda is not None: break
+
+        if lmbda is None:
+            raise Exception(f'Something went wrong in Corral (None) {self._ps}, {self._etas}, {losses}')
+
+        return [ max(1/((1/p) + eta*(loss-lmbda)),.00001) for p, eta, loss in zip(self._ps, self._etas, losses)]
+
+class CorralOffPolicy:
+    """This is a modified implementation of the Agarwal et al. (2017) Corral algorithm.
+
+    This algorithm assumes that the reward distribution has support in [0,1] and that all learners can learn off-policy.
+
+    References:
+        Agarwal, Alekh, Haipeng Luo, Behnam Neyshabur, and Robert E. Schapire. 
+        "Corralling a band of bandit algorithms." In Conference on Learning 
+        Theory, pp. 12-38. PMLR, 2017.
+    """
+
+    def __init__(self,
+        epsilon: float,
+        max_memories: int,
+        learn_distance: bool,
+        eta : float,
+        T: float = math.inf,
+        d: int = 1, 
+        c: int = 10,
+        seed: int = 1) -> None:
+        """Instantiate a CorralLearner.
+        
+        Args:
+            base_learners: The collection of algorithms to use as base learners.
+            eta: The learning rate. In our experiments a value between 0.05 and .10 often seemed best.
+            T: The number of interactions expected during the learning process. In our experiments the 
+                algorithm performance seemed relatively insensitive to this value.
+            seed: A seed for a random number generation in ordre to get repeatable results.
+
+        Remark:
+            If the given base learners don't require feedback for every selected action then it is possible to
+            modify this algorithm so as to use rejection sampling while being as efficient as importance sampling.
+        """
+
+        assert 0 <= epsilon and epsilon <= 1
+        assert 1 <= max_memories
+
+        learn_distance = True
+
+        self._base_learners: Sequence[Learner] = [
+            MemorizedLearner(epsilon, max_memories, learn_distance, d=d, c=c),
+            ResidualLearner(epsilon, max_memories, learn_distance, d=d, c=c),
+            VowpalLearner(epsilon=epsilon,seed=seed)
+        ]
+
+        M = 3
+
+        self._gamma = 1/T
+        self._beta  = 1/math.exp(1/math.log(T))
+
+        self._eta_init = eta
+        self._etas     = [ eta ] * M
+        self._rhos     = [ float(2*M) ] * M
+        self._ps       = [ 1/M ] * M
+        self._p_bars   = [ 1/M ] * M
+
+        self._learn_count = 0
+
+        self._random = random.Random(seed)
+
+        self._predicts: Dict[int, Sequence[float]] = {}
+        self._actions : Dict[int, Sequence[Any]] = {}
+
+        self._full_expected_loss = [0,0,0]
+        self._i = 0
+
+    @property
+    def family(self) -> str:
+        """The family of the learner.
+
+        See the base class for more information
+        """
+        return "corral_off_policy"
+    
+    @property
+    def params(self) -> Dict[str, Any]:
+        """The parameters of the learner.
+
+        See the base class for more information
+        """        
+        return {"eta": self._eta_init, "B": [ b.family for b in self._base_learners ] }
+
+    def predict(self, key, context, actions) -> Sequence[float]:
+        """Determine a PMF with which to select the given actions.
+
+        Args:
+            key: The key identifying the interaction we are choosing for.
+            context: The context we're currently in. See the base class for more information.
+            actions: The actions to choose from. See the base class for more information.
+
+        Returns:
+            The probability of taking each action. See the base class for more information.
+        """
+
+        self._i += 1
+
+        action_predicts  = [0] * len(actions)
+        learner_predicts = [learner.predict(key,context,actions) for learner in self._base_learners]
+
+        self._predicts[key] = learner_predicts
+        self._actions [key] = actions
+
+        for learner_p_bar, learner_predict in zip(self._p_bars, learner_predicts):
+            for action_index, learner_action_prob in enumerate(learner_predict):
+                action_predicts[action_index] += learner_action_prob * learner_p_bar
+
+        assert round(sum(action_predicts),3) == 1
+
+        return action_predicts
+
+    def learn(self, key, context, action, reward, probability) -> None:
+        """Learn from the given interaction.
+
+        Args:
+            key: The key identifying the interaction this observed reward came from.
+            context: The context we're learning about. See the base class for more information.
+            action: The action that was selected in the context. See the base class for more information.
+            reward: The reward that was gained from the action. See the base class for more information.
+            probability: The probability that the given action was taken.
+        """
+
+        self._learn_count += 1
+
+        loss = 1-reward
+
+        assert  0 <= loss and loss <= 1, "The current Corral implementation assumes a loss between 0 and 1"
+
+        for base_learner in self._base_learners:
+            base_learner.learn(key, context, action, reward, probability)
+
+        actions             = self._actions.pop(key)
+        predicts            = self._predicts.pop(key)
+        picked_action_index = actions.index(action) 
+
+        expected_loss_estimates = [ loss/probability * predict[picked_action_index] for predict in predicts ] 
+
+        for i,l in enumerate(expected_loss_estimates):
+            self._full_expected_loss[i] = (1-1/self._i) * self._full_expected_loss[i] + (1/self._i) * l  
+
+        self._ps     = self._log_barrier_omd(expected_loss_estimates)
+        self._p_bars = [ (1-self._gamma)*p + self._gamma*1/len(self._base_learners) for p in self._ps ]
+
+        if self._i % 50 == 0:
+            print(self._p_bars)
+            print(self._full_expected_loss)
+            print("")
+
+        for i in range(len(self._p_bars)):
+            if 1/self._p_bars[i] > self._rhos[i]:
+                self._rhos[i] = 2/self._p_bars[i]
+                self._etas[i] *= self._beta
+
+    def _log_barrier_omd(self, losses) -> List[float]:
 
         f  = lambda l: float(sum( [ 1/((1/p) + eta*(loss-l)) for p, eta, loss in zip(self._ps, self._etas, losses)]))
         df = lambda l: float(sum( [ eta/((1/p) + eta*(loss-l))**2 for p, eta, loss in zip(self._ps, self._etas, losses)]))

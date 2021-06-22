@@ -26,7 +26,7 @@ class MemorizableSimulation(Source[Simulation]):
     def read(self) -> Simulation:
         
         contexts = [(0,), (1,), (2,)]
-        actions  = [ (1, 0, 0), (0, 1, 0), (0, 0, 1) ]
+        actions  = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
 
         def context_generator(index:int):
             return contexts[index%3]

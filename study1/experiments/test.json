@@ -1,5 +1,5 @@
 {
     "simulations": [ 
-        [ "Memorizable", { "Shuffle": [111,222,333], "method": "foreach" }, {"Take": 1000 } ] 
+        [ {"OpenmlSimulation": 1483 }, { "Shuffle": [100,200,300,400,500,600,700,800,900,1000], "method": "foreach" }, {"Take": 500 } ] 
     ]
 }

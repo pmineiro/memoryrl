@@ -1,7 +1,7 @@
 {
     "variables": {
-        "$openmls"   : { "OpenmlSimulation": [1471,180,184,6,155,1503,1459,40985,42468,1483,1044,32], "method": "foreach" },
-        "$shuffles"  : { "Shuffle"         : [100,200,300,400,500,600,700,800,900,1000]             , "method": "foreach" }
+        "$openmls"   : { "OpenmlSimulation": [1471,180,184,6,155,1459,42468,1483,1044,32], "method": "foreach" },
+        "$shuffles"  : { "Shuffle"         : [100,200,300]  , "method": "foreach" }
     },
     "simulations": [
         ["$openmls"  ,  "$shuffles", { "Take": 10000 } ]
