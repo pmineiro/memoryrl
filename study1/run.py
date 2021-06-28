@@ -11,9 +11,9 @@ from learners import ResidualLearner, MemorizedLearner, CorralOffPolicy
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner
 
-experiment = "madish"
+experiment = "full"
 processes  = 8
-chunk_by   = 'task'
+chunk_by   = 'source'
 
 max_memories   = 3000
 learn_distance = True

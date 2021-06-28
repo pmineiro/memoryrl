@@ -752,9 +752,6 @@ class CorralRejection:
                 if round(f(x),precision) == 1:
                     return x
 
-                if (i % 30000) == 0:
-                    print(i)
-
         lmbda: Optional[float] = None
 
         if min_loss == max_loss:
@@ -949,9 +946,6 @@ class CorralEnsemble:
                 if round(f(x),precision) == 1:
                     return x
 
-                if (i % 30000) == 0:
-                    print(i)
-
         lmbda: Optional[float] = None
 
         if min_loss == max_loss:
@@ -1114,10 +1108,10 @@ class CorralOffPolicy:
         self._ps     = self._log_barrier_omd(expected_loss_estimates)
         self._p_bars = [ (1-self._gamma)*p + self._gamma*1/len(self._base_learners) for p in self._ps ]
 
-        if self._i % 50 == 0:
-            print(self._p_bars)
-            print(self._full_expected_loss)
-            print("")
+        # if self._i % 50 == 0:
+        #     print(self._p_bars)
+        #     print(self._full_expected_loss)
+        #     print("")
 
         for i in range(len(self._p_bars)):
             if 1/self._p_bars[i] > self._rhos[i]:
@@ -1156,9 +1150,6 @@ class CorralOffPolicy:
 
                 if round(f(x),precision) == 1:
                     return x
-
-                if (i % 30000) == 0:
-                    print(i)
 
         lmbda: Optional[float] = None
 
