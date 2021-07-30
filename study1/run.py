@@ -11,7 +11,7 @@ from learners import ResidualLearner, MemorizedLearner, CorralOffPolicy
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner
 
-experiment = "full"
+experiment = 'madish'
 processes  = 8
 chunk_by   = 'source'
 
@@ -22,7 +22,7 @@ d              = 4
 c              = 40
 
 json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}.log"
+log  = f"./study1/outcomes/{experiment}_5.log"
 
 learners = [
     VowpalLearner(epsilon=epsilon),

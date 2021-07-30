@@ -3,9 +3,11 @@ import random
 import math
 
 from itertools import count
+from collections import defaultdict
 from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union, List
 
 import numpy as np
+from sklearn.feature_extraction import FeatureHasher
 
 from coba.learners import VowpalLearner, Learner
 
@@ -15,6 +17,61 @@ logn = 500
 bits = 20
 
 class CMT_Implemented:
+
+    class MemoryKey:
+
+        def __init__(self, context, action) -> None:
+
+            context_features = self._featurize(context, 2, 'x')
+            action_features  = self._featurize(action , 1, 'a')
+
+            x   = context_features[1]
+            xx  = context_features[2]
+            a   = action_features[1]
+            xa  = [ (x_f[0]+a_f[0],x_f[1]*a_f[1]) for x_f in x  for a_f in a ]
+            xxa = [ (x_f[0]+a_f[0],x_f[1]*a_f[1]) for x_f in xx for a_f in a ]
+
+            all_features = x+a+xa+xxa
+            self._hashed = FeatureHasher(n_features=2**18, input_type='pair').fit_transform([all_features])
+
+            #if len(all_features) != self._hashed.nnz:
+                #print(self._hashed.nnz/len(all_features))
+
+            self._hash = hash(tuple(x+a))
+
+        def features(self):
+            return self._hashed
+
+        def _featurize(self, input, degree, ns):
+
+            features_by_degree = defaultdict(list)
+
+            if input is None:
+                features_by_degree[1] = [ (ns,1) ]
+
+            elif isinstance(input,str):
+                features_by_degree[1] = [ (ns+input, 1) ]
+
+            else:
+                if isinstance(input,dict):
+                    items = input.items()
+                else:
+                    items = list(enumerate(input))
+
+                items = [ (f"{ns}{n}{v}",1) if isinstance(v,str) else (f"{ns}{n}",v) for n,v in items ]
+                items = sorted(filter(lambda i: i[1] !=0, items), key=lambda i: i[0])
+                names,values = zip(*items)
+
+                features_by_degree[1] = list(zip(names,values))
+
+                if degree == 2:
+                    features_by_degree[2] = [ (names[i]+names[j], values[i]*values[j]) for i in range(len(names)) for j in range(i+1) ]
+
+            return features_by_degree
+
+        def __hash__(self) -> int:
+            return self._hash
+
     class LogisticModel_VW:
         def __init__(self, *args, **kwargs):
 
@@ -22,7 +79,7 @@ class CMT_Implemented:
             self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --link=glf1 -q ax --cubic axx')
 
         def predict(self, xraw):
-            
+
             (x, a) = xraw
             ex = ' |x ' + ' '.join(
                 [f'{n+1}:{v}' for n, v in enumerate(x) if v != 0]
@@ -48,22 +105,20 @@ class CMT_Implemented:
     class LogisticModel_SK:
         def __init__(self):
 
-            from sklearn.feature_extraction import FeatureHasher
             from sklearn.linear_model import SGDClassifier
-            
+
             self.clf  = SGDClassifier(loss="log", average=True)
-            self.hash = FeatureHasher(n_features=2**18,input_type="pair")
             self.is_fit = False
 
-        def predict(self, X): 
-            return 1 if not self.is_fit else self.clf.predict(self._domain(X))[0]
+        def predict(self, x): 
+            return 1 if not self.is_fit else self.clf.predict(self._domain(x))[0]
 
-        def update(self, X, y, w):
+        def update(self, x, y, w):
             self.is_fit = True
-            self.clf.partial_fit(self._domain(X), [y], sample_weight=[w], classes=[-1,1])
-        
-        def _domain(self, X):
-            return self.hash.transform([X]) if isinstance(X[0], tuple) else X
+            self.clf.partial_fit(self._domain(x), [y], sample_weight=[w], classes=[-1,1])
+
+        def _domain(self, x):
+            return x.features()
 
     class LearnedEuclideanDistance:
 
@@ -75,19 +130,19 @@ class CMT_Implemented:
             self.tt    = [0]*6
             self.learn = learn
 
-        def diff(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> Dict[str,float]:            
-            return { key: vec1.get(key,0)-vec2.get(key,0) for key in set(vec1.keys()) | set(vec2.keys()) if vec1.get(key,0)-vec2.get(key,0) != 0 }
+        def diff(self, vec1, vec2):            
+            return vec1-vec2
 
-        def inner(self, vec1: Dict[str,float], vec2: Dict[str,float]) -> float:
-            return sum([ vec1[key]*vec2[key] for key in set(vec1.keys()) & set(vec2.keys()) ])
+        def inner(self, vec1, vec2) -> float:
+            return vec1.multiply(vec2).data.sum()
 
         def predict(self, xraw, z):
 
             ss = [0]*6
             ee = [0]*6
 
-            X  = dict(xraw) #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
-            Xp = dict(z[0]) #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+            X  = xraw.features() #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+            Xp = z[0].features() #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
 
             ss[2] = time.time()
             dp = self.diff(X,Xp)
@@ -99,7 +154,8 @@ class CMT_Implemented:
 
             ss[4] = time.time()
             initial    = -0.01 * dp_dot_dp
-            prediction = 0 if not self.vw else self.vw.predict(f' |x ' + ' '.join([f'{k}:{round(v**2,6)}' for k,v in dp.items()]))
+            features   = [f'{k}:{round(v**2,6)}' for k,v in zip(dp.indices, dp.data)]
+            prediction = 0 if not self.vw else self.vw.predict(f' |x ' + ' '.join(features))
             ee[4] = time.time()
 
             for i,s,e in zip(count(),ss,ee):
@@ -111,21 +167,22 @@ class CMT_Implemented:
             if not self.vw: return
 
             if r > 0 and len(z) > 1:
-                X   = dict(xraw)    #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
-                Xp  = dict(z[0][0]) #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
-                Xpp = dict(z[1][0]) #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
-                
+                X   = xraw.features()    #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+                Xp  = z[0][0].features() #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+                Xpp = z[1][0].features() #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+
                 dp  = self.diff(X, Xp)
                 dpp = self.diff(X, Xpp)
 
-                initial = 0.01 * (self.inner(dp,dp) - self.inner(dpp,dpp))
-
-                keys     = dp.keys() | dpp.keys()
-                features = [f'{key}:{round(dp.get(key,0)**2-dpp.get(key,0)**2,6)}' for key in keys]
+                initial  = 0.01 * (self.inner(dp,dp) - self.inner(dpp,dpp))
+                keys     = set(dp.indices) | set(dpp.indices)
+                features = [f'{key}:{round(dp[0,key]**2-dpp[0,key]**2,6)}' for key in keys]
 
                 self.vw.learn(f'1 {r} {initial} |x ' + ' '.join(features))
 
     def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk', c=10, d=1, megalr=0.1) -> None:
+
+        from sklearn.preprocessing import PolynomialFeatures
 
         self._max_memories = max_memories
         self._learn_dist   = learn_dist
@@ -136,10 +193,12 @@ class CMT_Implemented:
         self._megalr       = megalr
 
         router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
-        
+
         scorer         = CMT_Implemented.LearnedEuclideanDistance(self._learn_dist)
         random_state   = random.Random(1337)
         ords           = random.Random(2112)
+
+        self._p = PolynomialFeatures(degree=2)
 
         self.mem = CMT(router_factory, scorer, alpha=0.25, c=self._c, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
 
@@ -151,7 +210,7 @@ class CMT_Implemented:
         return(CMT_Implemented, (self._max_memories, self._learn_dist, self._signal_type, self._router_type, self._c, self._d) )
 
     def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
-        
+
         memories = []
 
         for action in actions:
@@ -195,35 +254,10 @@ class CMT_Implemented:
         raise Exception(f"Unrecognized signal type: {self._signal_type}")
 
     def _mem_key(self, context, action):
-
-        if isinstance(context, str):
-            x  = { context: 1 }
-        elif isinstance(context, dict):
-            x  = context
-        else:
-            x  = np.array(context) if isinstance(context,tuple) else np.array([context])
-            
-        if isinstance(action, str):
-            a = {action:1}
-        elif isinstance(action, dict):
-            a = action
-        else:
-            a  = np.array(action)  if isinstance(action,tuple) else np.array([action])
-
-        if not isinstance(x,dict) and not isinstance(a,dict):
-            xx = np.outer(x,x)[np.triu_indices(len(x))]
-            xa = np.outer(x,a).flatten()
-            xxa = np.outer(xx,a).flatten()
-            return tuple((f"x{i}",f) for i,f in enumerate(np.concatenate([x, a, xa, xxa]).tolist()))
-        else:
-            x  = [ (f"x{k}",v) for k,v in x.items() ] if isinstance(x,dict) else [ (f"x{i}",v) for i,v in enumerate(x) ]
-            a  = [ (f"a{k}",v) for k,v in a.items() ] if isinstance(a,dict) else [ (f"a{i}",v) for i,v in enumerate(a) ]
-            xx = [ (x[i][0]+x[j][0],x[i][1]*x[j][1]) for i in range(len(x)) for j in range(i+1) ]
-
-            xa  = [ (key1+key2,val1*val2) for key1,val1 in x  for key2,val2 in a ]
-            xxa = [ (key1+key2,val1*val2) for key1,val1 in xx for key2,val2 in a ]
-
-            return tuple(x+xx) if not a else tuple(x+a+xa+xxa)
+        #start = time.time()
+        a = CMT_Implemented.MemoryKey(context,action)
+        #print(time.time()-start)
+        return a
 
 class FullFeedbackMemLearner:
     def __init__(self, max_memories: int = 1000, learn_dist: bool = True, c=10, d=1, signal:str = 'se', router: str = 'sk'):
@@ -248,7 +282,7 @@ class FullFeedbackMemLearner:
         """Choose which action index to take."""
 
         predict_start = time.time()
-        
+
         self._fixed_actions = self._fixed_actions or actions
         self._i += 1
 
@@ -272,7 +306,7 @@ class FullFeedbackMemLearner:
 
             if len(self._fixed_actions) == 1000:
                 self._full_reward = coba.simulations.OpenmlSimulation(1592).read().reward
-            
+
             if len(self._fixed_actions) == 51:
                 self._full_reward = simulations.Rcv1Simulation().read().reward
 
@@ -337,7 +371,7 @@ class FullFeedbackVowpalLearner:
         if self._full_reward is None:
             import coba.simulations
             import simulations
-            
+
             if len(self._fixed_actions) == 3:
                 self._full_reward = simulations.MemorizableSimulation().read().reward
 
@@ -349,7 +383,7 @@ class FullFeedbackVowpalLearner:
 
             if len(self._fixed_actions) == 1000:
                 self._full_reward = coba.simulations.OpenmlSimulation(1592).read().reward
-            
+
             if len(self._fixed_actions) == 51:
                 self._full_reward = simulations.Rcv1Simulation().read().reward
 
@@ -448,7 +482,7 @@ class MemorizedIpsLearner:
         self._times[1] += time.time()-learn_start        
 
 class MemorizedLearner:
-    
+
     def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, c=10, d=1, signal:str = 'se', router: str = 'sk') -> None:
 
         assert 0 <= epsilon and epsilon <= 1
@@ -573,7 +607,7 @@ class ResidualLearner:
         """Learn about the result of an action that was taken in a context."""
 
         learn_start = time.time()
-        
+
         (predicts, actions) = self._predicts.pop(key)
 
         act_ind = actions.index(action)
@@ -584,7 +618,7 @@ class ResidualLearner:
 
         self.vw.learn(self.toadf(context, actions, (act_ind, obs_loss, probability)))
         self.mem.update(context, action, obs_resid)
-        
+
         self._times[1] += time.time()-learn_start
 
 class CorralRejection:
@@ -987,7 +1021,7 @@ class CorralOffPolicy:
         c: int = 10,
         seed: int = 1) -> None:
         """Instantiate a CorralLearner.
-        
+
         Args:
             base_learners: The collection of algorithms to use as base learners.
             eta: The learning rate. In our experiments a value between 0.05 and .10 often seemed best.
@@ -1039,7 +1073,7 @@ class CorralOffPolicy:
         See the base class for more information
         """
         return "corral_off_policy"
-    
+
     @property
     def params(self) -> Dict[str, Any]:
         """The parameters of the learner.
@@ -1097,13 +1131,18 @@ class CorralOffPolicy:
             base_learner.learn(key, context, action, reward, probability)
 
         actions             = self._actions.pop(key)
-        predicts            = self._predicts.pop(key)
+        learner_predicts    = self._predicts.pop(key)
         picked_action_index = actions.index(action) 
+        base_probabilities  = [ base_predict[picked_action_index]/probability for base_predict in learner_predicts ] 
 
-        expected_loss_estimates = [ loss/probability * predict[picked_action_index] for predict in predicts ] 
+        expected_loss_estimates = [ loss * base_probability/probability for base_probability in base_probabilities ] 
 
         for i,l in enumerate(expected_loss_estimates):
             self._full_expected_loss[i] = (1-1/self._i) * self._full_expected_loss[i] + (1/self._i) * l  
+
+        base_predict_data = { f"predict_{i}": learner_predicts[i][picked_action_index] for i in range(3) }
+        base_pbar_data    = { f"pbar_{i}"   : self._p_bars[i]                  for i in range(3) }
+        predict_data      = { "predict"     : probability, **base_predict_data, **base_pbar_data }
 
         self._ps     = self._log_barrier_omd(expected_loss_estimates)
         self._p_bars = [ (1-self._gamma)*p + self._gamma*1/len(self._base_learners) for p in self._ps ]
@@ -1117,6 +1156,8 @@ class CorralOffPolicy:
             if 1/self._p_bars[i] > self._rhos[i]:
                 self._rhos[i] = 2/self._p_bars[i]
                 self._etas[i] *= self._beta
+
+        return { k:round(v,4) for k,v in {**predict_data, **base_predict_data, **base_pbar_data}.items() }
 
     def _log_barrier_omd(self, losses) -> List[float]:
 
@@ -1132,7 +1173,7 @@ class CorralOffPolicy:
 
         def newtons_zero(l,r) -> Optional[float]:
             """Use Newton's method to calculate the root."""
-            
+
             #depending on scales this check may fail though that seems unlikely
             if (f(l+.0001)-1) * (f(r-.00001)-1) >= 0:
                 return None
