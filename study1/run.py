@@ -22,12 +22,11 @@ d              = 4
 c              = 40
 
 json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}_5.log"
+log  = f"./study1/outcomes/{experiment}_6.log"
 
 learners = [
     VowpalLearner(epsilon=epsilon),
     MemorizedLearner(epsilon, max_memories, learn_distance, d=d, c=c),
-    ResidualLearner (epsilon, max_memories, learn_distance, d=d, c=c),
     CorralOffPolicy (epsilon, max_memories, learn_distance, d=d, c=c, eta=.075, T=4000),
 ]
 

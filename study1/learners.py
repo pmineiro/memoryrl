@@ -1040,12 +1040,12 @@ class CorralOffPolicy:
         learn_distance = True
 
         self._base_learners: Sequence[Learner] = [
+            VowpalLearner(epsilon=epsilon,seed=seed),
             MemorizedLearner(epsilon, max_memories, learn_distance, d=d, c=c),
-            ResidualLearner(epsilon, max_memories, learn_distance, d=d, c=c),
-            VowpalLearner(epsilon=epsilon,seed=seed)
+#            ResidualLearner(epsilon, max_memories, learn_distance, d=d, c=c)
         ]
 
-        M = 3
+        M = len(self._base_learners)
 
         self._gamma = 1/T
         self._beta  = 1/math.exp(1/math.log(T))
@@ -1063,7 +1063,7 @@ class CorralOffPolicy:
         self._predicts: Dict[int, Sequence[float]] = {}
         self._actions : Dict[int, Sequence[Any]] = {}
 
-        self._full_expected_loss = [0,0,0]
+        self._full_expected_loss = [0]*M
         self._i = 0
 
     @property
@@ -1133,24 +1133,24 @@ class CorralOffPolicy:
         actions             = self._actions.pop(key)
         learner_predicts    = self._predicts.pop(key)
         picked_action_index = actions.index(action) 
-        base_probabilities  = [ base_predict[picked_action_index]/probability for base_predict in learner_predicts ] 
+        base_probabilities  = [ base_predict[picked_action_index] for base_predict in learner_predicts ] 
 
         expected_loss_estimates = [ loss * base_probability/probability for base_probability in base_probabilities ] 
 
         for i,l in enumerate(expected_loss_estimates):
             self._full_expected_loss[i] = (1-1/self._i) * self._full_expected_loss[i] + (1/self._i) * l  
 
-        base_predict_data = { f"predict_{i}": learner_predicts[i][picked_action_index] for i in range(3) }
-        base_pbar_data    = { f"pbar_{i}"   : self._p_bars[i]                  for i in range(3) }
+        base_predict_data = { f"predict_{i}": learner_predicts[i][picked_action_index] for i in range(len(self._base_learners)) }
+        base_pbar_data    = { f"pbar_{i}"   : self._p_bars[i]                          for i in range(len(self._base_learners)) }
         predict_data      = { "predict"     : probability, **base_predict_data, **base_pbar_data }
 
         self._ps     = self._log_barrier_omd(expected_loss_estimates)
         self._p_bars = [ (1-self._gamma)*p + self._gamma*1/len(self._base_learners) for p in self._ps ]
 
-        # if self._i % 50 == 0:
-        #     print(self._p_bars)
-        #     print(self._full_expected_loss)
-        #     print("")
+        if self._i % 50 == 0:
+            print(self._p_bars)
+            print(self._full_expected_loss)
+            print("")
 
         for i in range(len(self._p_bars)):
             if 1/self._p_bars[i] > self._rhos[i]:
