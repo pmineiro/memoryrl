@@ -560,6 +560,8 @@ class ResidualLearner:
 
         from vowpalwabbit import pyvw
 
+        self._args = (epsilon, max_memories, learn_dist, c, d, signal, router, scorer, megalr)
+
         self._epsilon = epsilon
         self._max_memories = max_memories
         self._learn_dist = learn_dist
@@ -639,6 +641,9 @@ class ResidualLearner:
         self.mem.update(context, action, obs_resid)
 
         self._times[1] += time.time()-learn_start
+    
+    def __reduce__(self):
+        return (ResidualLearner,self._args)
 
 class CorralOffPolicy_Old:
     """This is a modified implementation of the Agarwal et al. (2017) Corral algorithm.
