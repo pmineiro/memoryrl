@@ -15,7 +15,7 @@ from coba.learners import VowpalLearner, Learner, CorralLearner
 
 from memory import CMT
 
-logn = 50
+logn = 500
 bits = 20
 
 class CMT_Implemented:
@@ -125,9 +125,7 @@ class CMT_Implemented:
             ee[3] = time.time()
 
             ss[4] = time.time()
-            initial = -0.01 * dp_dot_dp
-
-            if self.vw and len(dp.indices) > 0:
+            if self.vw and dp.nnz > 0:
                 example    = pyvw.example(self.vw, {"x": list(zip(map(str,dp.indices), dp.data**2))})
                 prediction = self.vw.predict(example)
             else:
@@ -137,6 +135,7 @@ class CMT_Implemented:
             for i,s,e in zip(count(),ss,ee):
                 self.tt[i] += e-s
 
+            initial = -0.01 * dp_dot_dp
             return initial + prediction
 
         def update(self, xraw, z, r):
@@ -154,11 +153,12 @@ class CMT_Implemented:
                 data = mat.data
                 keys = map(str,mat.indices)
 
+                start = time.time()
                 initial  = 0.01 * (self.inner(dp,dp) - self.inner(dpp,dpp))
                 example = pyvw.example(self.vw, {"x": list(zip(keys,data))})
                 example.set_label_string(f"1 {r} {initial}")
-
                 self.vw.learn(example)
+                self.tt[4] += time.time()-start
 
         def __reduce__(self):
             return (CMT_Implemented.LearnedEuclideanDistance, (self.learn,) )
@@ -259,7 +259,7 @@ class CMT_Implemented:
     def _error_signal(self, obs, prd):
 
         if self._signal_type == 'se':
-            return (1-abs(prd-obs))**2
+            return 1-(prd-obs)**2
 
         if self._signal_type == 're':
 

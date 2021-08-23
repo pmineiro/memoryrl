@@ -13,20 +13,20 @@ from learners import ResidualLearner, MemorizedLearner, LoggedCorralLearner, Mem
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner, RandomLearner
 
-experiment = 'madish'
-processes  = 10
+experiment = 'test'
+processes  = 1
 chunk_by   = 'source'
 
 max_memories   = 3000
 learn_distance = True
 epsilon        = 0.1
 d              = 4
-c              = 20
+c              = 40
 megalr         = 0.1
 scorer         = 'vw'
 
 json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}_9.log"
+log  = None#f"./study1/outcomes/{experiment}_9.log"
 
 learners = [
    VowpalLearner(epsilon=epsilon),
