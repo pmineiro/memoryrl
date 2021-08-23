@@ -3,17 +3,19 @@ import random
 import math
 
 from itertools import count
-from collections import defaultdict
 from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union, List
 
+from vowpalwabbit import pyvw 
+import scipy.sparse as sp
 import numpy as np
 from sklearn.feature_extraction import FeatureHasher
 
+from coba.encodings import InteractionTermsEncoder
 from coba.learners import VowpalLearner, Learner, CorralLearner
 
 from memory import CMT
 
-logn = 500
+logn = 50
 bits = 20
 
 class CMT_Implemented:
@@ -22,60 +24,27 @@ class CMT_Implemented:
 
         def __init__(self, context, action) -> None:
 
-            context_features = self._featurize(context, 2, 'x')
-            action_features  = self._featurize(action , 1, 'a')
+            features = self._featurize(context, action)
 
-            x   = context_features[1]
-            xx  = context_features[2]
-            a   = action_features[1]
-            xa  = [ (x_f[0]+a_f[0],x_f[1]*a_f[1]) for x_f in x  for a_f in a ]
-            xxa = [ (x_f[0]+a_f[0],x_f[1]*a_f[1]) for x_f in xx for a_f in a ]
+            if isinstance(features[0],tuple):
+                self._features = FeatureHasher(n_features=2**18, input_type='pair').fit_transform([features])
+            else:
+                #doing this because some code later that assumes we're working with sparse matrices
+                self._features = sp.csr_matrix((features,([0]*len(features),range(len(features)))), shape=(1,len(features)))
 
-            all_features = x+a+xa+xxa
-            self._hashed = FeatureHasher(n_features=2**18, input_type='pair').fit_transform([all_features])
-
-            #if len(all_features) != self._hashed.nnz:
-                #print(self._hashed.nnz/len(all_features))
-
-            self._hash = hash(tuple(x+a))
+            self._hash = hash((context,action))
 
         def features(self):
-            return self._hashed
+            return self._features
 
-        def _featurize(self, input, degree, ns):
-
-            features_by_degree = defaultdict(list)
-
-            if input is None:
-                features_by_degree[1] = [ (ns,1) ]
-
-            elif isinstance(input,str):
-                features_by_degree[1] = [ (ns+input, 1) ]
-
-            else:
-                if isinstance(input,dict):
-                    items = input.items()
-                else:
-                    items = list(enumerate(input))
-
-                items = [ (f"{ns}{n}{v}",1) if isinstance(v,str) else (f"{ns}{n}",v) for n,v in items ]
-                items = sorted(filter(lambda i: i[1] !=0, items), key=lambda i: i[0])
-                names,values = zip(*items)
-
-                features_by_degree[1] = list(zip(names,values))
-
-                if degree == 2:
-                    features_by_degree[2] = [ (names[i]+names[j], values[i]*values[j]) for i in range(len(names)) for j in range(i+1) ]
-
-            return features_by_degree
+        def _featurize(self, context, action):
+            return InteractionTermsEncoder(['x','a','xa','xxa']).encode(x=context,a=action)            
 
         def __hash__(self) -> int:
             return self._hash
 
     class LogisticModel_VW:
         def __init__(self, *args, **kwargs):
-
-            from vowpalwabbit import pyvw
             self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --link=glf1 -q ax --cubic axx')
 
         def predict(self, xraw):
@@ -101,6 +70,9 @@ class CMT_Implemented:
             )
 
             self.vw.learn(ex)
+
+        def __reduce__(self):
+            return (CMT_Implemented.LogisticModel_VW,())
 
     class LogisticModel_SK:
         def __init__(self):
@@ -149,13 +121,17 @@ class CMT_Implemented:
             ee[2] = time.time()
 
             ss[3] = time.time()
-            dp_dot_dp = self.inner(dp,dp) 
+            dp_dot_dp = self.inner(dp,dp)
             ee[3] = time.time()
 
             ss[4] = time.time()
-            initial    = -0.01 * dp_dot_dp
-            features   = [f'{k}:{round(v**2,6)}' for k,v in zip(dp.indices, dp.data)]
-            prediction = 0 if not self.vw else self.vw.predict(f' |x ' + ' '.join(features))
+            initial = -0.01 * dp_dot_dp
+
+            if self.vw and len(dp.indices) > 0:
+                example    = pyvw.example(self.vw, {"x": list(zip(map(str,dp.indices), dp.data**2))})
+                prediction = self.vw.predict(example)
+            else:
+                prediction = 0
             ee[4] = time.time()
 
             for i,s,e in zip(count(),ss,ee):
@@ -167,47 +143,87 @@ class CMT_Implemented:
             if not self.vw: return
 
             if r > 0 and len(z) > 1:
-                X   = xraw.features()    #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
-                Xp  = z[0][0].features() #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
-                Xpp = z[1][0].features() #now has (x,a,xa,xxa)... the old version just had (x,a,xa)
+                X   = xraw.features()
+                Xp  = z[0][0].features()
+                Xpp = z[1][0].features()
 
                 dp  = self.diff(X, Xp)
                 dpp = self.diff(X, Xpp)
 
+                mat = dp.power(2) - dpp.power(2)
+                data = mat.data
+                keys = map(str,mat.indices)
+
                 initial  = 0.01 * (self.inner(dp,dp) - self.inner(dpp,dpp))
-                keys     = set(dp.indices) | set(dpp.indices)
-                features = [f'{key}:{round(dp[0,key]**2-dpp[0,key]**2,6)}' for key in keys]
+                example = pyvw.example(self.vw, {"x": list(zip(keys,data))})
+                example.set_label_string(f"1 {r} {initial}")
 
-                self.vw.learn(f'1 {r} {initial} |x ' + ' '.join(features))
+                self.vw.learn(example)
 
-    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk', c=10, d=1, megalr=0.1) -> None:
+        def __reduce__(self):
+            return (CMT_Implemented.LearnedEuclideanDistance, (self.learn,) )
 
-        from sklearn.preprocessing import PolynomialFeatures
+    class MarksRewardLearner:
+
+        def __init__(self,learn=True):
+
+            from sklearn.linear_model import SGDRegressor
+
+            self.clf    = SGDRegressor(loss="squared_loss", learning_rate='invscaling', eta0=1, power_t=1, average=True)
+            self.is_fit = False
+            self.learn  = learn
+
+        def model_features(self, vec1, vec2):
+            return sp.hstack([vec1,vec1.multiply(vec2)/(vec1.power(2).sum() * vec2.power(2).sum())**1/2]) 
+
+        def normed_linear_prod(self, vec1, vec2):
+            return vec1.multiply(vec2).sum() / (vec1.power(2).sum() * vec2.power(2).sum())**1/2
+
+        def predict(self, trigger, memory):
+
+            ec1 = trigger.features()
+            ec2 = memory[0].features()
+
+            feat = self.model_features(ec1,ec2)
+            init = self.normed_linear_prod(ec1,ec2)
+            pred = 0 if not self.is_fit else self.clf.predict(feat)[0]
+
+            return init + pred
+
+        def update(self, trigger, memory, reward):
+            if not self.learn: return
+
+            ec1 = trigger.features()
+            ec2 = memory[0][0].features()
+
+            feat = self.model_features(ec1,ec2)
+            init = self.normed_linear_prod(ec1,ec2)
+
+            self.is_fit = True
+            self.clf.partial_fit(feat, [reward-init])
+
+    def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk', scorer_type:str = 'vw', c=10, d=1, megalr=0.1) -> None:
 
         self._max_memories = max_memories
         self._learn_dist   = learn_dist
         self._signal_type  = signal_type
         self._router_type  = router_type
+        self._scorer_type  = scorer_type
         self._c            = c
         self._d            = d
         self._megalr       = megalr
 
         router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
+        scorer         = CMT_Implemented.LearnedEuclideanDistance(self._learn_dist) if self._scorer_type == 'vw' else CMT_Implemented.MarksRewardLearner(self._learn_dist)
 
-        scorer         = CMT_Implemented.LearnedEuclideanDistance(self._learn_dist)
         random_state   = random.Random(1337)
         ords           = random.Random(2112)
-
-        self._p = PolynomialFeatures(degree=2)
 
         self.mem = CMT(router_factory, scorer, alpha=0.25, c=self._c, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
 
     @property
     def params(self):
-        return { 'm': self._max_memories, 'b': bits, 'ld': self._learn_dist, 'sig': self._signal_type, 'rt': self._router_type, 'd': self._d, 'c': self._c, 'mlr': self._megalr }
-
-    def __reduce__(self) -> Union[str, Tuple[Any, ...]]:
-        return(CMT_Implemented, (self._max_memories, self._learn_dist, self._signal_type, self._router_type, self._c, self._d) )
+        return { 'm': self._max_memories, 'b': bits, 'ld': self._learn_dist, 'sig': self._signal_type, 'rt': self._router_type, 'st': self._scorer_type, 'd': self._d, 'c': self._c, 'mlr': self._megalr }
 
     def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
 
@@ -223,13 +239,14 @@ class CMT_Implemented:
     def update(self, context: Hashable, action: Hashable, observation: Union[float, np.ndarray]):
 
         trigger = self._mem_key(context, action)
-        (u,z) = self.mem.query(trigger, k=2, epsilon=1)
+        (u,z) = self.mem.query(trigger, k=2, epsilon=1) #we select randomly with probability 1-epsilon
 
         if len(z) > 0:
 
-            memory = z[0][1] + self._megalr * ( observation-z[0][1] )
+            memory = z[0][1] 
 
             if self._megalr > 0:
+                memory += self._megalr * ( observation-memory )
                 self.mem.updateomega(z[0][0], memory)
 
             self.mem.update(u, trigger, z, self._error_signal(observation, memory))
@@ -242,10 +259,7 @@ class CMT_Implemented:
     def _error_signal(self, obs, prd):
 
         if self._signal_type == 'se':
-            if isinstance(prd, np.ndarray):
-                return 1-min(1, max(0, (np.linalg.norm(prd-obs)**2)/2))
-            else:
-                return 1-(prd-obs)**2
+            return (1-abs(prd-obs))**2
 
         if self._signal_type == 're':
 
@@ -486,7 +500,7 @@ class MemorizedIpsLearner:
 
 class MemorizedLearner:
 
-    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, c=10, d=1, signal:str = 'se', router: str = 'sk', megalr=0.1) -> None:
+    def __init__(self, epsilon: float, max_memories: int = 1000, learn_dist: bool = True, c=10, d=1, signal:str = 'se', router: str = 'sk', scorer: str='vw', megalr=0.1) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
         assert 1 <= max_memories
@@ -494,7 +508,7 @@ class MemorizedLearner:
         self._epsilon = epsilon
         self._i       = 0
 
-        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, c=c, d=d, megalr=megalr)
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, scorer, c=c, d=d, megalr=megalr)
 
         self._times = [0, 0]
 
@@ -509,9 +523,16 @@ class MemorizedLearner:
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
 
-        predict_start = time.time()
         self._i += 1
 
+        if logn and self._i % logn == 0:
+           #print(self.mem.query(context, actions))
+           #print(self.mem.mem.f.__class__.__name__)
+           print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+
+        predict_start = time.time()
+        
         (greedy_a, greedy_r) = actions[0], -math.inf
 
         for action, remembered_value in zip(actions, self.mem.query(context, actions)):
@@ -523,10 +544,6 @@ class MemorizedLearner:
 
         self._times[0] += time.time()-predict_start
 
-        if logn and self._i % logn == 0:
-           print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
-
         return [ minp if i != ga else minp+(1-self._epsilon) for i in range(len(actions)) ], None
 
     def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, info: Any) -> None:
@@ -536,7 +553,7 @@ class MemorizedLearner:
         self._times[1] += time.time()-learn_start
 
 class ResidualLearner:
-    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool = True, c=10, d=1, signal:str = 're', router:str ='sk'):
+    def __init__(self, epsilon: float, max_memories: int, learn_dist: bool = True, c=10, d=1, signal:str = 're', router:str ='sk', scorer:str = 'vw', megalr:float = 0.1):
 
         assert 0 <= epsilon and epsilon <= 1
         assert 1 <= max_memories
@@ -551,15 +568,12 @@ class ResidualLearner:
         self._signal = signal
         self._router = router
         
-        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, c=c, d=d)
+        self.mem = CMT_Implemented(max_memories, learn_dist, signal, router, scorer, c=c, d=d, megalr=megalr)
         self.vw  = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s')
 
         self._i        = 0
         self._predicts = {}
         self._times    = [0,0]
-
-    def __reduce__(self):
-        return (ResidualLearner,(self._epsilon, self._max_memories, self._learn_dist, self._c, self._d, self._signal, self._router))
 
     @property
     def family(self) -> str:
@@ -831,7 +845,7 @@ class CorralOffPolicy_Old:
 
         return [ max(1/((1/p) + eta*(loss-lmbda)),.00001) for p, eta, loss in zip(self._ps, self._etas, losses)]
 
-class CorralOffPolicy(CorralLearner):
+class LoggedCorralLearner(CorralLearner):
     """This is a modified implementation of the Agarwal et al. (2017) Corral algorithm.
 
     This algorithm assumes that the reward distribution has support in [0,1] and that all learners can learn off-policy.
@@ -842,7 +856,7 @@ class CorralOffPolicy(CorralLearner):
         Theory, pp. 12-38. PMLR, 2017.
     """
 
-    def __init__(self, base_learners: Sequence[Learner], eta : float, T: float = math.inf, seed: int = 1) -> None:
+    def __init__(self, base_learners: Sequence[Learner], eta : float, T: float = math.inf, type: str = "off-policy", seed: int = 1) -> None:
         """Instantiate a CorralLearner.
 
         Args:
@@ -860,7 +874,7 @@ class CorralOffPolicy(CorralLearner):
         self._full_expected_rwd = [0]*len(base_learners)
         self._i = 0
 
-        super().__init__(base_learners, eta=eta, T=T, seed=seed, type="off-policy")
+        super().__init__(base_learners, eta=eta, T=T, seed=seed, type=type)
 
     def predict(self, context, actions) -> Tuple[Sequence[float], Any]:
 
