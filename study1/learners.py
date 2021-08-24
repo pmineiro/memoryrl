@@ -92,7 +92,7 @@ class CMT_Implemented:
         def _domain(self, x):
             return x.features()
 
-    class LearnedEuclideanDistance:
+    class LearnedDist_VW:
 
         def __init__(self,learn=True):
 
@@ -161,46 +161,153 @@ class CMT_Implemented:
                 self.tt[4] += time.time()-start
 
         def __reduce__(self):
-            return (CMT_Implemented.LearnedEuclideanDistance, (self.learn,) )
+            return (CMT_Implemented.LearnedDist_VW, (self.learn,) )
 
-    class MarksRewardLearner:
+    class LearnedDist_SK:
 
         def __init__(self,learn=True):
 
             from sklearn.linear_model import SGDRegressor
 
-            self.clf    = SGDRegressor(loss="squared_loss", learning_rate='invscaling', eta0=1, power_t=1, average=True)
+            self.clf    = SGDRegressor(loss="squared_loss")
             self.is_fit = False
             self.learn  = learn
 
-        def model_features(self, vec1, vec2):
-            return sp.hstack([vec1,vec1.multiply(vec2)/(vec1.power(2).sum() * vec2.power(2).sum())**1/2]) 
+        def model_feat_init(self, ex1, ex2s):
+            # should return 0 as best
+            ef1 = ex1.features()
 
-        def normed_linear_prod(self, vec1, vec2):
-            return vec1.multiply(vec2).sum() / (vec1.power(2).sum() * vec2.power(2).sum())**1/2
+            final_feat = None
+            final_init = None
+
+            for ex2 in ex2s:
+            
+                ef2  = ex2.features()
+                feat = (ef1-ef2).power(2)
+                init = feat.data.sum()
+
+                final_feat = feat if final_feat is None else final_feat + feat
+                final_init = init if final_init is None else final_init + init
+
+            return final_feat,final_init
 
         def predict(self, trigger, memory):
 
-            ec1 = trigger.features()
-            ec2 = memory[0].features()
-
-            feat = self.model_features(ec1,ec2)
-            init = self.normed_linear_prod(ec1,ec2)
+            feat,init = self.model_feat_init(trigger,[memory[0]])
             pred = 0 if not self.is_fit else self.clf.predict(feat)[0]
+            return 0.01*init + pred
 
-            return init + pred
-
-        def update(self, trigger, memory, reward):
+        def update(self, trigger, memories, reward):
             if not self.learn: return
 
-            ec1 = trigger.features()
-            ec2 = memory[0][0].features()
-
-            feat = self.model_features(ec1,ec2)
-            init = self.normed_linear_prod(ec1,ec2)
-
+            feat,init = self.model_feat_init(trigger,[m[0] for m in memories])
             self.is_fit = True
-            self.clf.partial_fit(feat, [reward-init])
+            self.clf.partial_fit(feat, [1-init*0.01], float(reward))
+    
+    class LearnedCos_SK:
+
+        def __init__(self,learn=True):
+
+            from sklearn.linear_model import SGDRegressor
+
+            self.clf    = SGDRegressor(loss="squared_loss")
+            self.is_fit = False
+            self.learn  = learn
+
+        def example_features(self, ex):
+            f = ex.features()
+            n = (f.data**2).sum()**(1/2)
+            return f.multiply(1/n)
+
+        def model_feat_init(self, ex1, ex2s):
+            # should return 0 as best
+            ef1 = self.example_features(ex1)
+
+            final_feat = None
+            final_init = None
+
+            for ex2 in ex2s:
+
+                ef2 = self.example_features(ex2)
+                feat = ef1.multiply(ef2)
+                init = 1 - (feat.data.sum()+1)/2
+
+                final_feat = feat if final_feat is None else final_feat + feat
+                final_init = init if final_init is None else final_init + init
+
+            return final_feat,final_init/len(ex2s)
+
+        def predict(self, trigger, memory):
+
+            feat,init = self.model_feat_init(trigger,[memory[0]]) 
+
+            pred = 0 if not self.is_fit else self.clf.predict(feat)[0]
+
+            return 1-(init+pred)
+
+        def update(self, trigger, memories, reward):
+
+            if not self.learn: return
+
+            feat,init = self.model_feat_init(trigger,[m[0] for m in memories])
+            self.is_fit = True
+            self.clf.partial_fit(feat, [1-reward-init])
+
+    class LearnedCorr_SK:
+
+        def __init__(self,learn=True):
+
+            from sklearn.linear_model import SGDRegressor
+
+            self.clf    = SGDRegressor(loss="squared_loss")
+            self.is_fit = False
+            self.learn  = learn
+
+        def example_features(self, ex):
+            return ex.features()
+
+        def model_feat_init(self, ex1, ex2s):
+            # should return 0 as best
+            ef1 = self.example_features(ex1)
+
+            final_feat = None
+            final_init = None
+
+            for ex2 in ex2s:
+
+                ef2 = self.example_features(ex2)
+                
+                nnz = len(set(ef1.indices) | set(ef1.indices))
+
+                mf1 = ef1.data.sum() / nnz
+                mf2 = ef2.data.sum() / nnz
+
+                sf1 = ((ef1.data**2).sum()/nnz-mf1**2)**(1/2)
+                sf2 = ((ef2.data**2).sum()/nnz-mf2**2)**(1/2)
+                
+                feat = (ef1.multiply(ef2) - ef1.multiply(mf2) - ef2.multiply(mf1)).multiply(1/(nnz*sf1*sf2))
+                init = 1-feat.data.sum() + mf1*mf2/(sf1*sf2)
+
+                final_feat = feat if final_feat is None else final_feat + feat
+                final_init = init if final_init is None else final_init + init
+
+            return final_feat,final_init/len(ex2s)
+
+        def predict(self, trigger, memory):
+
+            feat,init = self.model_feat_init(trigger,[memory[0]]) 
+
+            pred = 0 if not self.is_fit else self.clf.predict(feat)[0]
+
+            return 1-(init+pred)
+
+        def update(self, trigger, memories, reward):
+
+            if not self.learn: return
+
+            feat,init = self.model_feat_init(trigger,[m[0] for m in memories])
+            self.is_fit = True
+            self.clf.partial_fit(feat, [1-reward-init])
 
     def __init__(self, max_memories: int = 1000, learn_dist: bool = True, signal_type:str = 'se', router_type:str = 'sk', scorer_type:str = 'vw', c=10, d=1, megalr=0.1) -> None:
 
@@ -214,7 +321,17 @@ class CMT_Implemented:
         self._megalr       = megalr
 
         router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
-        scorer         = CMT_Implemented.LearnedEuclideanDistance(self._learn_dist) if self._scorer_type == 'vw' else CMT_Implemented.MarksRewardLearner(self._learn_dist)
+        
+        if self._scorer_type == 'dist_vw':
+            scorer = CMT_Implemented.LearnedDist_VW(self._learn_dist)
+        elif self._scorer_type == "dist_sk":
+            scorer = CMT_Implemented.LearnedDist_SK(self._learn_dist)
+        elif self._scorer_type == "cos_sk":
+            scorer = CMT_Implemented.LearnedCos_SK(self._learn_dist)
+        elif self._scorer_type == "corr_sk":
+            scorer = CMT_Implemented.LearnedCorr_SK(self._learn_dist)
+        else:
+            raise Exception("Unrecognized Scorer type")
 
         random_state   = random.Random(1337)
         ords           = random.Random(2112)
@@ -251,6 +368,10 @@ class CMT_Implemented:
 
             self.mem.update(u, trigger, z, self._error_signal(observation, memory))
 
+        # this logic here could be gated on:
+        # 1. len(z) > 0 so that error signal is defined (otherwise just insert)
+        # 2. if error signal is low, skip the insert (randomly? roll a dice maybe)
+
         if trigger in self.mem.leafbykey:
             self.mem.delete(trigger)
 
@@ -259,10 +380,9 @@ class CMT_Implemented:
     def _error_signal(self, obs, prd):
 
         if self._signal_type == 'se':
-            return 1-(prd-obs)**2
+            return max(0, min(1, 1-(prd-obs)**2)) 
 
         if self._signal_type == 're':
-
             how_much  = sorted([0, abs(obs)    , 1])[1]
             how_close = sorted([0, abs(obs-prd), 1])[1]
 
