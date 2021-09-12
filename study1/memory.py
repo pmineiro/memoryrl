@@ -1,3 +1,4 @@
+import time
 from math import log
 from heapq import heappush, heappop
 
@@ -11,6 +12,7 @@ class CMT:
             self.left = left
             self.right = right
             self.g = g
+
             #assert self.depth < 10, f'wtf {self.depth}'
 
         @property
@@ -46,6 +48,10 @@ class CMT:
 
         def topk(self, x, k, f):
             assert self.isLeaf
+
+            #scores   = [ f.predict(x,z) for z in self.memories.items()]
+            #memories = [ z[1] for z in self.memories.items()]
+
             return [ z for _, z in zip(range(k),
                                        sorted(self.memories.items(),
                                               key=lambda z: f.predict(x, z),
@@ -114,6 +120,7 @@ class CMT:
         self.rerouting = False
         self.splitting = False
         self._router_count = 0
+        self.time = 0
 
     def nodeForeach(self, f, node=None):
         if node is None:
@@ -149,7 +156,9 @@ class CMT:
                 return ((path.leaf, None, None), path.leaf.randk(k, self.randomState))
 
     def update(self, u, x, z, r):
+
         assert 0 <= r <= 1
+
         if u is None:
             pass
         else:
@@ -241,6 +250,7 @@ class CMT:
             self.insert(x, omega, v)
             self.splitting = False
 
+        #this is very important for residual learner, less so for memorized learner
         if not self.rerouting and not self.splitting:
             daleaf = self.leafbykey[x]
             dabest = daleaf.topk(x, 2, self.f)
@@ -265,7 +275,7 @@ class CMT:
             v.g.update(x, signy, 1)
             v.n += 1
             v = v.right if v.g.predict(x) > 0 else v.left
-
+        
         self.__insertLeaf(x, omega, v)
 
         if not self.rerouting and not self.splitting:
@@ -287,3 +297,16 @@ class CMT:
         if False:
             for k in self.leafbykey.keys():
                 assert k in self.leafbykey[k].memories
+
+    def print(self):
+
+        def print_node(node: CMT.Node, depth:int):
+            
+            if node is None:
+                return
+
+            print( "  "*depth + f"N={len(node.memories)}")
+            print_node(node.left, depth+1)
+            print_node(node.right, depth+1)
+
+        print_node(self.root, 0)

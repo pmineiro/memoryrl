@@ -1,70 +1,35 @@
-from gzip import GzipFile
-
 from typing import Tuple
 
-from coba.random import CobaRandom
-from coba.pipes import Source, MemorySource
-from coba.simulations import Simulation, LibsvmSimulation, ManikSimulation, LambdaSimulation
-from coba.registry import coba_registry_class
+import numpy as np
+from scipy.spatial.distance import cdist
+from coba.simulations import LambdaSimulation
 
-@coba_registry_class("Mediamill")
-class MediamillSimulation(Source[Simulation]):
+class MemorizableSimulation(LambdaSimulation):
 
-    #The mediamill data set found on the following page
-    #http://manikvarma.org/downloads/XC/XMLRepository.html
+    def __init__(self, n_interactions:int = 1000, n_features:int = 100, n_anchors=1000, n_actions:int = 10, density:int=1, seed:int = 1) -> None:
 
-    def read(self) -> Simulation:
-        with GzipFile("./study1/datasets/Mediamill_data.gz", 'r') as fs:
-            return ManikSimulation(MemorySource([line.decode('utf-8') for line in fs ])).read()
+        np.random.seed([seed])
+        anchors       = np.random.rand(n_anchors,n_features) * density
+        anchor_values = np.zeros((n_anchors,n_actions))
+        anchor_values[np.arange(n_anchors),np.random.randint(0,n_actions,n_anchors)] = 1
 
-    def __repr__(self):
-        return "mediamill"
+        contexts       = np.random.rand(n_interactions, n_features)*density
+        distances      = cdist(contexts,anchors)
+        anchor_indexes = np.argmin(distances,axis=1)
 
-@coba_registry_class("Memorizable")
-class MemorizableSimulation(Source[Simulation]):
-    
-    def read(self) -> Simulation:
-        
-        contexts = [(0,), (1,), (2,)]
-        actions  = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+        contexts = [tuple(c) for c in contexts]
+        actions  = [tuple(l) for l in np.eye(n_actions)]
 
         def context_generator(index:int):
-            return contexts[index%3]
+            return contexts[index]
         
         def action_generator(index:int, context:Tuple[float,...]):
             return actions
 
         def reward_function(index:int, context:Tuple[float,...], action: Tuple[int,...]):
-            return float( actions[context[0]] == action)
+            return anchor_values[anchor_indexes[index], action.index(1)]
 
-        return LambdaSimulation(10000, context_generator, action_generator, reward_function).read()
+        super().__init__(n_interactions, context_generator, action_generator, reward_function)
     
     def __repr__(self):
         return "memorizable"
-
-@coba_registry_class("Sector")
-class SectorSimulation(Source[Simulation]):
-
-    #combination of the train and test sets of the sector dataset
-    #https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#sector
-
-    def read(self) -> Simulation:
-        with GzipFile("./study1/datasets/sector.gz", 'r') as fs:
-            return LibsvmSimulation(MemorySource([line.decode('utf-8') for line in fs ])).read()
-    
-    def __repr__(self):
-        return "sector"
-
-@coba_registry_class("Rcv1")
-class Rcv1Simulation(Source[Simulation]):
-
-    #the train set of the rcv1.multiclass dataset (train in order to keep the dataset small)
-    #https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#rcv1.multiclass
-
-    def read(self) -> Simulation:
-        with GzipFile("./study1/datasets/rcv1.gz", 'r') as fs:
-            return LibsvmSimulation(MemorySource([line.decode('utf-8') for line in fs ])).read()
-
-    
-    def __repr__(self):
-        return "rcv1"
