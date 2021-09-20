@@ -7,8 +7,9 @@ os.environ['OMP_NUM_THREADS'] = '1'
 
 from simulations import MemorizableSimulation
 from learners import ResidualLearner, MemorizedLearner, LoggedCorralLearner, MemorizedVW, CMT_Implemented
-from scorers import DiffSubScorer, ClassScorer, AdditionScorer, DistanceScorer, RegrScorer
-from signals import DevSignal, RwdSignal
+from scorers import ClassScorer, AdditionScorer, DistanceScorer, RegrScorer, UCBScorer
+from feedbacks import DevFeedback, RwdFeedback
+from examplers import PureExampler, DiffSquareExampler
 
 from coba.simulations import ValidationSimulation, OpenmlSimulation
 from coba.benchmarks import Benchmark
@@ -20,9 +21,9 @@ d            = 4
 c            = 25
 megalr       = 0.1
 
-processes  = 8
-shuffle    = [1,2]
-take       = 1000
+processes  = 1
+shuffle    = [1]
+take       = 2000
 
 simulations = [
    ValidationSimulation (30000, n_actions=5, action_features=False, make_binary=True),
@@ -30,21 +31,34 @@ simulations = [
    MemorizableSimulation(30000, n_anchors=200, n_actions=2, n_features=5)
 ]
 
-cmt_1 = CMT_Implemented(max_memories, scorer= ClassScorer()            , signal=DevSignal("absolute"), c=c, d=d, megalr=megalr)
-cmt_2 = CMT_Implemented(max_memories, scorer= ClassScorer()            , signal=DevSignal("squared") , c=c, d=d, megalr=megalr)
-cmt_3 = CMT_Implemented(max_memories, scorer= ClassScorer()            , signal=RwdSignal()          , c=c, d=d, megalr=megalr)
-cmt_4 = CMT_Implemented(max_memories, scorer= RegrScorer(base="none")  , signal=RwdSignal()          , c=c, d=d, megalr=megalr)
-cmt_5 = CMT_Implemented(max_memories, scorer= RegrScorer(base="dist")  , signal=RwdSignal()          , c=c, d=d, megalr=megalr)
-cmt_6 = CMT_Implemented(max_memories, scorer= RegrScorer(base="reward"), signal=RwdSignal()          , c=c, d=d, megalr=megalr)
+#BEST
+scorer1 = RegrScorer (base="none", exampler=PureExampler(), interactions=["ac","ad","bc","bd","abcd"], ignored=["a","b","c","d"])
+scorer2 = ClassScorer(base="none", exampler=PureExampler(), interactions=["ac","ad","bc","bd","abcd"], ignored=["a","b","c","d"])
+scorer3 = RegrScorer (base="none", exampler=DiffSquareExampler(), interactions=[], ignored=[])
+scorer4 = ClassScorer(base="none", exampler=DiffSquareExampler(), interactions=[], ignored=[])
+
+#SECOND BEST
+#scorer1 = RegrScorer (base="l2" , exampler=PureExampler(), interactions=["ac","ad","bc","bd","abcd"], ignored=["a","b","c","d"])
+#scorer2 = ClassScorer(base="l2" , exampler=PureExampler(), interactions=["ac","ad","bc","bd","abcd"], ignored=["a","b","c","d"])
+#scorer3 = RegrScorer (base="cos", exampler=DiffSquareExampler(), interactions=[], ignored=[])
+#scorer4 = ClassScorer(base="l2" , exampler=DiffSquareExampler(), interactions=[], ignored=[])
+
+#TEST BED
+#scorer1 = RegrScorer(base="none",exampler=DiffSquareExampler(), interactions=[], ignored=[])
+#scorer2 = RegrScorer(base="mem" ,exampler=DiffSquareExampler(), interactions=[], ignored=[])
+#scorer3 = RegrScorer(base="l2"  ,exampler=DiffSquareExampler(), interactions=[], ignored=[])
+scorer4 = ClassScorer(base="cos" ,exampler=DiffSquareExampler(), interactions=[], ignored=[])
+
+cmt_1 = CMT_Implemented(max_memories, scorer=scorer1, signal=RwdFeedback(), c=c, d=d, megalr=megalr)
+cmt_2 = CMT_Implemented(max_memories, scorer=scorer2, signal=RwdFeedback(), c=c, d=1, megalr=megalr)
+cmt_3 = CMT_Implemented(max_memories, scorer=scorer3, signal=RwdFeedback(), c=c, d=d, megalr=megalr)
+cmt_4 = CMT_Implemented(max_memories, scorer=scorer4, signal=RwdFeedback(), c=c, d=1, megalr=megalr)
 
 learners = [
-   VowpalLearner(epsilon=epsilon),
-   MemorizedLearner(epsilon, cmt_1),
-   MemorizedLearner(epsilon, cmt_2),
-   MemorizedLearner(epsilon, cmt_3),
+   #MemorizedLearner(epsilon, cmt_1),
+   #MemorizedLearner(epsilon, cmt_2),
+   #MemorizedLearner(epsilon, cmt_3),
    MemorizedLearner(epsilon, cmt_4),
-   MemorizedLearner(epsilon, cmt_5),
-   MemorizedLearner(epsilon, cmt_6),
 ]
 
 if __name__ == '__main__':

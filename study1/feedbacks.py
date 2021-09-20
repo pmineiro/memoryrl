@@ -1,5 +1,5 @@
 
-class RwdSignal:
+class RwdFeedback:
     
     def signal(self, observed:float, memory:float, reward:float) -> float:
         return reward
@@ -8,7 +8,7 @@ class RwdSignal:
     def params(self):
         return ('reward',)
 
-class DevSignal:
+class DevFeedback:
 
     def __init__(self, type:str = "squared"):
         assert type in ["squared", "absolute"]

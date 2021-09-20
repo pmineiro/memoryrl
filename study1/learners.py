@@ -14,7 +14,7 @@ from coba.learners import VowpalLearner, Learner, CorralLearner
 
 from memory import CMT
 from scorers import ClassScorer
-from signals import DevSignal
+from feedbacks import DevFeedback
 
 logn = 500
 bits = 20
@@ -101,7 +101,7 @@ class CMT_Implemented:
         def _domain(self, x):
             return x.features()
 
-    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer = ClassScorer(), signal=DevSignal(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0) -> None:
+    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer = ClassScorer(), signal=DevFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0) -> None:
 
         assert 1 <= max_memories
 
@@ -125,7 +125,7 @@ class CMT_Implemented:
 
     @property
     def params(self):
-        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "scr": self._scorer.params, "sig": self._signal.params, "g": self._gate }
+        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "g": self._gate, "sig": self._signal.params, "scr": self._scorer.params }
 
     def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
 
@@ -141,7 +141,9 @@ class CMT_Implemented:
     def update(self, context, action, observation, reward):
 
         trigger = self._mem_key(context, action)
+        
         (u,z) = self.mem.query(trigger, k=2, epsilon=1) #we pick best with prob 1-epsilon
+
         z = sorted(z, key=lambda zz: abs(observation-zz[1]))
 
         if len(z) > 0:

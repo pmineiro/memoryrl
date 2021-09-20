@@ -1,10 +1,11 @@
 import time
 from math import log
 from heapq import heappush, heappop
+from random import Random
 
 class CMT:
     class Node:
-        def __init__(self, parent, left=None, right=None, g=None):
+        def __init__(self, parent, randomState, left=None, right=None, g=None):
             self.parent = parent
             self.isLeaf = left is None
             self.n = 0
@@ -12,8 +13,7 @@ class CMT:
             self.left = left
             self.right = right
             self.g = g
-
-            #assert self.depth < 10, f'wtf {self.depth}'
+            self.randomState = randomState
 
         @property
         def depth(self):
@@ -23,8 +23,8 @@ class CMT:
             assert self.isLeaf
 
             self.isLeaf = False
-            self.left = CMT.Node(parent=self)
-            self.right = CMT.Node(parent=self)
+            self.left = CMT.Node(parent=self, randomState=self.randomState)
+            self.right = CMT.Node(parent=self, randomState=self.randomState)
             self.n = 0
             self.g = g
 
@@ -49,24 +49,21 @@ class CMT:
         def topk(self, x, k, f):
             assert self.isLeaf
 
-            #scores   = [ f.predict(x,z) for z in self.memories.items()]
-            #memories = [ z[1] for z in self.memories.items()]
+            items    = list(self.memories.items())
+            values   = f.predict(x, items)
+            sort_key = lambda item_value: (item_value[1], self.randomState.random())
+            values   = [ i for i,_ in sorted(zip(items,values), key=sort_key, reverse=True) ]
 
-            return [ z for _, z in zip(range(k),
-                                       sorted(self.memories.items(),
-                                              key=lambda z: f.predict(x, z),
-                                              reverse=True
-                                             )
-                                      )
-                   ]
+            return values[0:k]
 
-        def randk(self, k, randomState):
+        def randk(self, k):
+
             assert self.isLeaf
-            return [ z[1] for _, z in zip(range(k),
-                                          sorted( (randomState.uniform(0, 1), m) for m in self.memories.items()
-                                                )
-                                      )
-                   ]
+
+            items = list(self.memories.items())
+            self.randomState.shuffle(items)
+
+            return items[0:k]
 
     class Path:
         def __init__(self, nodes, leaf):
@@ -110,7 +107,7 @@ class CMT:
         self.c = c
         self.d = d
         self.leafbykey = {}
-        self.root = CMT.Node(None)
+        self.root = CMT.Node(None, randomState)
         self.randomState = randomState
         self.allkeys = []
         self.allkeysindex = {}
@@ -153,7 +150,7 @@ class CMT:
                 l = self.__path(x, a).leaf
                 return ((path.nodes[i], a, 1/2), l.topk(x, k, self.f))
             else:
-                return ((path.leaf, None, None), path.leaf.randk(k, self.randomState))
+                return ((path.leaf, None, None), path.leaf.randk(k))
 
     def update(self, u, x, z, r):
 
@@ -261,6 +258,12 @@ class CMT:
 
     def insert(self, x, omega, v=None):
         
+        #this is here for the UCB scorer
+        try: 
+            self.f.reset([(x,omega)])
+        except:
+            pass
+
         if x in self.leafbykey:
             # duplicate memory ... need to merge values ...
             assert False
