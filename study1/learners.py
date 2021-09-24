@@ -44,7 +44,7 @@ class CMT_Implemented:
             return self._features
 
         def _featurize(self, context, action, interactions):
-            return InteractionTermsEncoder(interactions).encode(x=context,a=action)            
+            return InteractionTermsEncoder(interactions).encode(x=context,a=action)
 
         def __hash__(self) -> int:
             return self._hash
@@ -101,7 +101,7 @@ class CMT_Implemented:
         def _domain(self, x):
             return x.features()
 
-    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer = ClassScorer(), signal=DevFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0) -> None:
+    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer = ClassScorer(), signal=DevFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0, sort:bool = False) -> None:
 
         assert 1 <= max_memories
 
@@ -112,6 +112,7 @@ class CMT_Implemented:
         self._megalr       = megalr
         self._interactions = interactions
         self._gate         = g
+        self._sort         = sort
 
         router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
 
@@ -125,7 +126,7 @@ class CMT_Implemented:
 
     @property
     def params(self):
-        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "g": self._gate, "sig": self._signal.params, "scr": self._scorer.params }
+        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "g": self._gate, "srt": self._sort, "sig": self._signal.params, "scr": self._scorer.params }
 
     def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
 
@@ -144,7 +145,16 @@ class CMT_Implemented:
         
         (u,z) = self.mem.query(trigger, k=2, epsilon=1) #we pick best with prob 1-epsilon
 
-        z = sorted(z, key=lambda zz: abs(observation-zz[1]))
+        if self._sort:
+            z = sorted(z, key=lambda zz: abs(observation-zz[1]))
+
+        # current ranking loss:
+        # 1. using the top 2 results from the current scorer, order them "better"
+        # alternative ranking loss:
+        # 1. find the best result in the leaf (using the "extra" learn-only information)
+        # 2. induce a ranking loss wrt the top result from the scorer
+        # 3. special case: if top scorer result == best result in leaf, use second scorer result 
+        #    note we esesntially are always doing the special case right now
 
         if len(z) > 0:
 
