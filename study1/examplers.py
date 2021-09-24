@@ -8,6 +8,49 @@ class Exampler:
     def make_example(self, vw, query, memory, base=0, label=0, weight=1):
         pass
 
+class IdentityExampler(Exampler):
+
+    def _vw_featurize(self, ns, features):
+        
+        if isinstance(features, sp.spmatrix):
+            keys = list(map(str,features.indices))
+            vals = features.data
+            return list(zip(keys,vals))
+        elif isinstance(features, dict):
+            return [ (k,v) for k,v in features.items() if v != 0 ]
+        else:
+
+            final_features = list(zip(map(str,range(len(features[0]))), features[0]))
+
+            final_final_features = []
+
+            for k,v in final_features:
+                if v == 0: continue
+
+                if isinstance(v, str):
+                    final_final_features.append((ns+"_"+v,1))
+                else:
+                    final_final_features.append((ns+"_"+k,v))
+            
+            return final_final_features
+
+    def make_example(self, vw, features, base=None, label=None, weight=None):
+
+        x = self._vw_featurize("x", features)
+
+        ex = pyvw.example(vw, {"x": x })
+
+        if label is not None:
+            ex.set_label_string(f"{label} {weight} {base}")
+
+        return ex
+
+    def __repr__(self) -> str:
+        return "identity"
+
+    def __str__(self) -> str:
+        return "identity"
+
 class PureExampler(Exampler):
 
     def _vw_featurize(self, ns, features):
