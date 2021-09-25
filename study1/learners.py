@@ -15,6 +15,7 @@ from coba.learners import VowpalLearner, Learner, CorralLearner
 from memory import CMT
 from scorers import ClassScorer
 from feedbacks import DevFeedback
+from examplers import IdentityExampler, PureExampler
 
 logn = 500
 bits = 20
@@ -28,7 +29,7 @@ class CMT_Implemented:
             features = self._featurize(context, action, interactions)
 
             if isinstance(features[0],tuple):
-                self._features = FeatureHasher(n_features=2**18, input_type='pair').fit_transform([features])
+                self._features = FeatureHasher(n_features=2**16, input_type='pair').fit_transform([features])
                 self._features.sort_indices()
             else:
                 #doing this because some code later that assumes we're working with sparse matrices
@@ -51,31 +52,14 @@ class CMT_Implemented:
 
     class LogisticModel_VW:
         def __init__(self, *args, **kwargs):
-            self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --link=glf1 -q ax --cubic axx')
+            self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t 1 --link=glf1')
+            self.exampler = IdentityExampler()
 
         def predict(self, xraw):
-
-            (x, a) = xraw
-            ex = ' |x ' + ' '.join(
-                [f'{n+1}:{v}' for n, v in enumerate(x) if v != 0]
-            )  + ' |a ' + ' '.join(
-                [f'{n+1}:{v}' for n, v in enumerate(a) if v != 0]
-            )
-
-            return self.vw.predict(ex)
+            return self.vw.predict(self.exampler.make_example(self.vw, xraw.features()))
 
         def update(self, xraw, y, w):
-
-            (x, a) = xraw
-            assert y == 1 or y == -1
-            assert w >= 0
-            ex = f'{y} {w} |x ' + ' '.join(
-                [f'{n+1}:{v}' for n, v in enumerate(x) if v != 0]
-            )  + ' |a ' + ' '.join(
-                [f'{n+1}:{v}' for n, v in enumerate(a) if v != 0]
-            )
-
-            self.vw.learn(ex)
+            self.vw.learn(self.exampler.make_example(self.vw, xraw.features(), 0, y, w))
 
         def __reduce__(self):
             return (CMT_Implemented.LogisticModel_VW,())
@@ -93,15 +77,15 @@ class CMT_Implemented:
             return 1 if not self.is_fit else self.clf.predict(self._domain(x))[0]
 
         def update(self, x, y, w):
-            self.is_fit = True
             start = time.time()
             self.clf.partial_fit(self._domain(x), [y], sample_weight=[w], classes=[-1,1])
+            self.is_fit = True
             self.time += time.time()-start
 
         def _domain(self, x):
             return x.features()
 
-    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer = ClassScorer(), signal=DevFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0, sort:bool = False) -> None:
+    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer=ClassScorer(), feedback=DevFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0, sort:bool = False, alpha:float=0.25) -> None:
 
         assert 1 <= max_memories
 
@@ -113,20 +97,21 @@ class CMT_Implemented:
         self._interactions = interactions
         self._gate         = g
         self._sort         = sort
+        self._alpha        = alpha
 
         router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
 
         self._scorer = copy.deepcopy(scorer)
-        self._signal = signal
+        self._signal = feedback
 
         random_state   = random.Random(1337)
         ords           = random.Random(2112)
 
-        self.mem = CMT(router_factory, self._scorer, alpha=0.25, c=self._c, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
+        self.mem = CMT(router_factory, self._scorer, alpha=self._alpha, c=self._c, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
 
     @property
     def params(self):
-        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "g": self._gate, "srt": self._sort, "sig": self._signal.params, "scr": self._scorer.params }
+        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "g": self._gate, "a": self._alpha, "srt": self._sort, "sig": self._signal.params, "rt": self._router_type, "scr": self._scorer.params }
 
     def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
 
@@ -340,7 +325,7 @@ class ResidualLearner:
     def __reduce__(self):
         return (ResidualLearner,self._args)
 
-class LoggedCorralLearner(CorralLearner):
+class MemCorralLearner(CorralLearner):
     """This is a modified implementation of the Agarwal et al. (2017) Corral algorithm.
 
     This algorithm assumes that the reward distribution has support in [0,1] and that all learners can learn off-policy.
@@ -370,8 +355,8 @@ class LoggedCorralLearner(CorralLearner):
 
         self._full_expected_rwd = [0]*len(base_learners)
         self._i = 0
-        self._id = LoggedCorralLearner.id
-        LoggedCorralLearner.id += 1
+        self._id = MemCorralLearner.id
+        MemCorralLearner.id += 1
 
         super().__init__(base_learners, eta=eta, T=T, seed=seed, type=type)
 

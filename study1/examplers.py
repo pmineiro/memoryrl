@@ -3,7 +3,15 @@ from vowpalwabbit import pyvw
 import scipy.sparse as sp
 
 class Exampler:
+    
+    @abstractmethod
+    def interactions(self):
+        pass
 
+    @abstractmethod
+    def ignored(self):
+        pass
+    
     @abstractmethod
     def make_example(self, vw, query, memory, base=0, label=0, weight=1):
         pass
@@ -34,6 +42,12 @@ class IdentityExampler(Exampler):
             
             return final_final_features
 
+    def interactions(self):
+        return []
+
+    def ignored(self):
+        return []
+
     def make_example(self, vw, features, base=None, label=None, weight=None):
 
         x = self._vw_featurize("x", features)
@@ -52,6 +66,16 @@ class IdentityExampler(Exampler):
         return "identity"
 
 class PureExampler(Exampler):
+
+    def __init__(self, interactions=["ac","ad","bc","bd","abcd"], ignored=["a","b","c","d"]):
+        self._interactions = interactions
+        self._ignored      = ignored
+
+    def interactions(self):
+        return self._interactions
+
+    def ignored(self):
+        return self._ignored
 
     def _vw_featurize(self, ns, features):
         
@@ -83,22 +107,45 @@ class PureExampler(Exampler):
         return ex
 
     def __repr__(self) -> str:
-        return "pure"
+        return f"pure{(self._interactions, self._ignored)}"
 
     def __str__(self) -> str:
-        return "pure"
+        return self.__repr__()
 
-class DiffSquareExampler(Exampler):
+class DiffExampler(Exampler):
+
+    def __init__(self, element_wise_op:str="square") -> None:
+
+        assert element_wise_op in ["square", "abs", "none"]
+
+        self._element_wise_op = element_wise_op
+ 
+    def interactions(self):
+        return []
+
+    def ignored(self):
+        return []
 
     def feat(self, ex1, ex2):
 
         ef1 = ex1.features()
         ef2 = ex2.features()
 
-        if isinstance(ef1, sp.spmatrix):
-            return (ef1-ef2).power(2)
-        else:
-            return (ef1-ef2)**2
+        diff = ef1-ef2
+
+        if self._element_wise_op == "none":
+            return diff
+        
+        if self._element_wise_op == "square" and sp.issparse(diff):
+            return diff.power(2) #fastest way to calculate this that I could find
+
+        if self._element_wise_op == "square" and not sp.issparse(diff):
+            return diff**2
+
+        if self._element_wise_op == "abs":
+            return abs(diff)
+
+        raise Exception("something unexpected happened")
 
     def make_example(self, vw, query, memory, base=0, label=0, weight=1):
 
@@ -117,7 +164,7 @@ class DiffSquareExampler(Exampler):
         return ex
     
     def __repr__(self) -> str:
-        return "diffsquare"
+        return f"diff({self._element_wise_op})"
 
     def __str__(self) -> str:
-        return "diffsquare"
+        return self.__repr__()
