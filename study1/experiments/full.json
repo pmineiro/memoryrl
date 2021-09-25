@@ -4,6 +4,6 @@
         "$shuffles"  : { "Shuffle"         : [100], "method": "foreach" }
     },
     "simulations": [
-        ["$openmls", "EuclidNormed", "$shuffles", { "Take": 10000 } ]
+        ["$openmls", "features_scaled_to_zero_one", "$shuffles", { "Take": 10000 } ]
     ]
 }
