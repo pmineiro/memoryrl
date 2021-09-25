@@ -34,7 +34,8 @@ class EuclidNormed(Filter[Iterable[Interaction],Iterable[Interaction]]):
 
             for k,v in keys_values:
                 if isinstance(v,Number):
-                    new_context[k] = (v-feature_min[k])/(feature_max[k]-feature_min[k])
+                    if feature_max[k]!=feature_min[k]:
+                        new_context[k] = (v-feature_min[k])/(feature_max[k]-feature_min[k])
                 else:
                     new_context[k] = v
 

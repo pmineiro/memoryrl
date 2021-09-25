@@ -14,7 +14,7 @@ bits = 20
 class Baser:
 
     def __init__(self, base="none", maxnorm=False):
-        
+
         assert base in ["none", "mem", "l1", "l2", "sql2", "cos"]
 
         self.base    = base
@@ -42,7 +42,8 @@ class Baser:
             ef2 = mem_context.features()
 
             if sp.issparse(ef1):
-                return distance.minkowski((ef1-ef2).data,0,p=1)
+                data = (ef1-ef2).data
+                return 0 if len(data) == 0 else distance.minkowski((ef1-ef2).data,0,p=1)
             else:
                 return distance.minkowski(ef1,ef2,p=1)
 
@@ -51,7 +52,8 @@ class Baser:
             ef2 = mem_context.features()
 
             if sp.issparse(ef1):
-                return distance.euclidean((ef1-ef2).data,0)
+                data = (ef1-ef2).data
+                return 0 if len(data) == 0 else distance.euclidean(data,0)
             else:
                 return distance.euclidean(ef1,ef2)
 
@@ -60,7 +62,8 @@ class Baser:
             ef2 = mem_context.features()
 
             if sp.issparse(ef1):
-                return distance.sqeuclidean((ef1-ef2).data,0)
+                data = (ef1-ef2).data
+                return 0 if len(data) == 0 else distance.sqeuclidean((ef1-ef2).data,0)
             else:
                 return distance.sqeuclidean(ef1,ef2)
 
