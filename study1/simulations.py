@@ -59,12 +59,9 @@ class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
         self._rng = CobaRandom(1)
 
     def filter(self, interactions: Iterable[Interaction]) -> Iterable[Interaction]:
-        
-        if self._probability == 0:
-            return interactions
 
         for interaction in interactions:
-            if self._rng.random() <= self._probability:
+            if self._probability > 0 and self._rng.random() <= self._probability:
                 #we flip them all, otherwise the chance of us receiving
                 #receiving an error for a wrong action selection will be
                 #much lower than a right action selection
