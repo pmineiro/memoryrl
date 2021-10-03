@@ -40,7 +40,10 @@ class EuclidNormed(Filter[Iterable[Interaction],Iterable[Interaction]]):
                 else:
                     new_context[k] = v
 
-            yield Interaction(new_context, interaction.actions, reveals=interaction.reveals, **interaction.results)
+            if 'reward' in interaction.results and len(interaction.results) == 1:
+                yield Interaction(new_context, interaction.actions, interaction.reveals)
+            else:
+                yield Interaction(new_context, interaction.actions, reveals=interaction.reveals, **interaction.results)
     
     def __repr__(self) -> str:
         return "features_scaled_to_zero_one"
@@ -70,37 +73,9 @@ class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
                 noised_labels = [r for r in interaction.reveals]
 
             yield Interaction(interaction.context, interaction.actions, reveals=noised_labels, reward=interaction.reveals)
-
-        materialized_interactions = list(interactions)
-
-        feature_max = {}
-        feature_min = {}
-
-        for interaction in materialized_interactions:
-            context     = interaction.context
-            keys_values = context.items() if isinstance(context,dict) else enumerate(context)
-            
-            for k,v in keys_values:
-                if isinstance(v,Number):
-                    feature_max[k] = max(feature_max.get(k,-math.inf),v)
-                    feature_min[k] = min(feature_min.get(k, math.inf),v)
-
-        for interaction in materialized_interactions:
-            context     = interaction.context
-            keys_values = context.items() if isinstance(context,dict) else enumerate(context)
-            new_context = {} if isinstance(interaction.context,dict) else [0]*len(context)
-
-            for k,v in keys_values:
-                if isinstance(v,Number):
-                    if feature_max[k]!=feature_min[k]:
-                        new_context[k] = (v-feature_min[k])/(feature_max[k]-feature_min[k])
-                else:
-                    new_context[k] = v
-
-            yield Interaction(new_context, interaction.actions, interaction.feedbacks)
     
     def __repr__(self) -> str:
-        return "features_scaled_to_zero_one"
+        return f"bernoulli_flip({self._probability})"
     
     def __str__(self) -> str:
         return super().__repr__()
