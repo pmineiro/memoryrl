@@ -49,7 +49,7 @@ class EuclidNormed(Filter[Iterable[Interaction],Iterable[Interaction]]):
         return "features_scaled_to_zero_one"
     
     def __str__(self) -> str:
-        return super().__repr__()
+        return self.__repr__()
 
 @coba_registry_class("bernoulli_flip")
 class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
@@ -78,8 +78,7 @@ class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
         return f"bernoulli_flip({self._probability})"
     
     def __str__(self) -> str:
-        return super().__repr__()
-
+        return self.__repr__()
 
 class MemorizableSimulation(LambdaSimulation):
 
