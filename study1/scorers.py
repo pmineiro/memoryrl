@@ -7,11 +7,11 @@ from scipy.spatial import distance
 import numpy as np
 import scipy.sparse as sp
 
-from examplers import Exampler, PureExampler, DiffExampler
+from examples import MemExample, InteractionExample, DifferenceExample
 
 bits = 20
 
-class Baser:
+class Base:
 
     def __init__(self, base="none", maxnorm=False):
 
@@ -84,9 +84,9 @@ class Baser:
     def __str__(self) -> str:
         return self.__repr__()
 
-class RegrScorer:
+class RegressionScorer:
 
-    def __init__(self, l2=0, power_t=0, baser:Baser=Baser(), exampler:Exampler=PureExampler()):
+    def __init__(self, l2=0, power_t=0, baser:Base=Base(), exampler:MemExample=InteractionExample()):
 
         self.baser = baser
 
@@ -133,9 +133,9 @@ class RegrScorer:
         self.vw.learn(example)
         self.vw.finish_example(example)
 
-class ClassScorer:
+class RankScorer:
 
-    def __init__(self, l2=0, power_t=0, baser:Baser=Baser(), exampler:Exampler=DiffExampler()):
+    def __init__(self, l2=0, power_t=0, baser:Base=Base(), exampler:MemExample=DifferenceExample()):
 
         self.baser = baser
 

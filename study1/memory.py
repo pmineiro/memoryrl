@@ -297,6 +297,12 @@ class CMT:
         self.insert(x, omega)
         self.rerouting = False
 
+        def print_dead(node):
+            if not node.isLeaf and node.left.n == 0 and node.right.n == 0:
+                print("DEAD")
+
+        #self.walk(print_dead)
+
         if False:
             for k in self.leafbykey.keys():
                 assert k in self.leafbykey[k].memories
@@ -313,3 +319,17 @@ class CMT:
             print_node(node.right, depth+1)
 
         print_node(self.root, 0)
+
+    def walk(self, func):
+
+        def walk_node(node: CMT.Node):
+            
+            if node is None:
+                return
+
+            func(node)
+
+            walk_node(node.left)
+            walk_node(node.right)
+
+        walk_node(self.root)

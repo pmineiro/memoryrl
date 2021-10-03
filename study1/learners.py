@@ -13,9 +13,9 @@ from coba.encodings import InteractionTermsEncoder
 from coba.learners import VowpalLearner, Learner, CorralLearner
 
 from memory import CMT
-from scorers import ClassScorer
-from feedbacks import DevFeedback
-from examplers import IdentityExampler, PureExampler
+from scorers import RankScorer
+from feedbacks import DeviationFeedback
+from examples import IdentityExample
 
 logn = 500
 bits = 20
@@ -53,7 +53,7 @@ class CMT_Implemented:
     class LogisticModel_VW:
         def __init__(self, *args, **kwargs):
             self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t 1 --link=glf1')
-            self.exampler = IdentityExampler()
+            self.exampler = IdentityExample()
 
         def predict(self, xraw):
             return self.vw.predict(self.exampler.make_example(self.vw, xraw.features()))
@@ -85,7 +85,7 @@ class CMT_Implemented:
         def _domain(self, x):
             return x.features()
 
-    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer=ClassScorer(), feedback=DevFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0, sort:bool = False, alpha:float=0.25) -> None:
+    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer=RankScorer(), feedback=DeviationFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0, sort:bool = False, alpha:float=0.25) -> None:
 
         assert 1 <= max_memories
 

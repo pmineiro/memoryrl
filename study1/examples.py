@@ -2,7 +2,7 @@ from abc import abstractmethod
 from vowpalwabbit import pyvw
 import scipy.sparse as sp
 
-class Exampler:
+class MemExample:
     
     @abstractmethod
     def interactions(self):
@@ -16,7 +16,7 @@ class Exampler:
     def make_example(self, vw, query, memory, base=0, label=0, weight=1):
         pass
 
-class IdentityExampler(Exampler):
+class IdentityExample(MemExample):
 
     def _vw_featurize(self, ns, features):
         
@@ -65,7 +65,7 @@ class IdentityExampler(Exampler):
     def __str__(self) -> str:
         return "identity"
 
-class PureExampler(Exampler):
+class InteractionExample(MemExample):
 
     def __init__(self, interactions=["ac","ad","bc","bd","abcd"], ignored=["a","b","c","d"]):
         self._interactions = interactions
@@ -112,7 +112,7 @@ class PureExampler(Exampler):
     def __str__(self) -> str:
         return self.__repr__()
 
-class DiffExampler(Exampler):
+class DifferenceExample(MemExample):
 
     def __init__(self, element_wise_op:str="square") -> None:
 

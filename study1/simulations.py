@@ -8,6 +8,7 @@ from scipy.spatial.distance import cdist
 from coba.pipes import Filter
 from coba.simulations import LambdaSimulation, Interaction
 from coba.registry import coba_registry_class
+from coba.random import CobaRandom
 
 @coba_registry_class("features_scaled_to_zero_one")
 class EuclidNormed(Filter[Iterable[Interaction],Iterable[Interaction]]):
@@ -39,7 +40,71 @@ class EuclidNormed(Filter[Iterable[Interaction],Iterable[Interaction]]):
                 else:
                     new_context[k] = v
 
+            yield Interaction(new_context, interaction.actions, reveals=interaction.reveals, **interaction.results)
+    
+    def __repr__(self) -> str:
+        return "features_scaled_to_zero_one"
+    
+    def __str__(self) -> str:
+        return super().__repr__()
+
+@coba_registry_class("bernoulli_flip")
+class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
+    
+    def __init__(self, probability=0) -> None:
+        self._probability = probability
+        self._rng = CobaRandom(1)
+
+    def filter(self, interactions: Iterable[Interaction]) -> Iterable[Interaction]:
+        
+        if self._probability == 0:
+            return interactions
+
+        for interaction in interactions:
+            if self._rng.random() <= self._probability:
+                #we flip them all, otherwise the chance of us receiving
+                #receiving an error for a wrong action selection will be
+                #much lower than a right action selection
+                noised_labels = [ (1-r) for r in interaction.reveals]
+            else:
+                noised_labels = [r for r in interaction.reveals]
+
+            yield Interaction(interaction.context, interaction.actions, reveals=noised_labels, reward=interaction.reveals)
+
+        materialized_interactions = list(interactions)
+
+        feature_max = {}
+        feature_min = {}
+
+        for interaction in materialized_interactions:
+            context     = interaction.context
+            keys_values = context.items() if isinstance(context,dict) else enumerate(context)
+            
+            for k,v in keys_values:
+                if isinstance(v,Number):
+                    feature_max[k] = max(feature_max.get(k,-math.inf),v)
+                    feature_min[k] = min(feature_min.get(k, math.inf),v)
+
+        for interaction in materialized_interactions:
+            context     = interaction.context
+            keys_values = context.items() if isinstance(context,dict) else enumerate(context)
+            new_context = {} if isinstance(interaction.context,dict) else [0]*len(context)
+
+            for k,v in keys_values:
+                if isinstance(v,Number):
+                    if feature_max[k]!=feature_min[k]:
+                        new_context[k] = (v-feature_min[k])/(feature_max[k]-feature_min[k])
+                else:
+                    new_context[k] = v
+
             yield Interaction(new_context, interaction.actions, interaction.feedbacks)
+    
+    def __repr__(self) -> str:
+        return "features_scaled_to_zero_one"
+    
+    def __str__(self) -> str:
+        return super().__repr__()
+
 
 class MemorizableSimulation(LambdaSimulation):
 
