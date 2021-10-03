@@ -15,7 +15,7 @@ class Base:
 
     def __init__(self, base="none", maxnorm=False):
 
-        assert base in ["none", "mem", "l1", "l2", "sql2", "cos"]
+        assert base in ["none", "mem", "l1", "l2", "l2^2", "cos"]
 
         self.base    = base
         self.maxnorm = maxnorm
@@ -57,7 +57,7 @@ class Base:
             else:
                 return distance.euclidean(ef1,ef2)
 
-        if self.base == "sql2":
+        if self.base == "l2^2":
             ef1 = query_context.features()
             ef2 = mem_context.features()
 
@@ -79,7 +79,7 @@ class Base:
                 return distance.cosine(ef1, ef2) / 2
 
     def __repr__(self) -> str:
-        return f"baser{(self.base,self.maxnorm)}"
+        return f"base({self.base})"
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -108,10 +108,6 @@ class RegressionScorer:
     def __reduce__(self):
         return (type(self), self.args)
 
-    @property
-    def params(self):
-        return ('regr',) + self.args
-
     def predict(self, xraw, zs):
 
         values = []
@@ -132,6 +128,12 @@ class RegressionScorer:
         example = self.exampler.make_example(self.vw, xraw, zs[0][0], base, r)
         self.vw.learn(example)
         self.vw.finish_example(example)
+
+    def __repr__(self) -> str:
+        return f"regr{self.args}"
+
+    def __str__(self) -> str:
+        return self.__repr__()
 
 class RankScorer:
 
@@ -155,10 +157,6 @@ class RankScorer:
 
     def __reduce__(self):
         return (type(self), self.args)
-
-    @property
-    def params(self):
-        return ('class',) + self.args
 
     def predict(self, xraw, zs):
 
@@ -188,42 +186,12 @@ class RankScorer:
             self.vw.learn(example)
             self.vw.finish_example(example)
 
-class ClassScorer2:
+    def __repr__(self) -> str:
+        return f"rank{self.args}"
 
-    def __init__(self):
-        from sklearn.linear_model import SGDClassifier
-        self.clf = SGDClassifier(loss="log", average=False, fit_intercept=False, learning_rate='constant', eta0=0.5, random_state=1)
-        self.is_fit = False
-        self.t = 0
+    def __str__(self) -> str:
+        return self.__repr__()
 
-    @property
-    def params(self):
-        return ('class2',)
-
-    def _domain(self, xraw, zs):
-
-        if sp.issparse(xraw.features()):
-            return (sp.vstack([z[0].features()- xraw.features() for z in zs])).power(2)
-        else:
-            return (np.vstack([z[0].features()[0] for z in zs]) - xraw.features())**2
-
-    def predict(self, xraw, zs):
-
-        if not self.is_fit or len(zs) == 0:
-            return [0]*len(zs)
-
-        return self.clf.predict_proba(self._domain(xraw,zs))[:,1].tolist()
-
-    def update(self, xraw, zs, r):
-
-        self.t += 1
-
-        X = self._domain(xraw, zs)
-        y = [1] + [-1]*(len(zs)-1)
-        w = [r] * len(y)
-
-        self.clf.partial_fit(X, y, sample_weight=w, classes=[-1,1])
-        self.is_fit = True
 
 class UCBScorer:
     def __init__(self):
@@ -247,62 +215,3 @@ class UCBScorer:
 
     def update(self, xraw, zs, r):
         self._ucb_learner.learn(None, zs[0][0], r, 1, None)
-
-class DistanceScorer:
-
-    def __init__(self, order=2, norm="mean"):
-
-        assert norm in ['max','mean']
-
-        self.i     = 0
-        self.stat  = norm
-        self.order = order
-        self.norm  = 1
-
-    @property
-    def params(self):
-        return ('distance', self.order, self.stat)
-
-    def distance(self,x1,x2):
-        diff = x1.features()-x2.features()
-
-        if  sp.issparse(diff):
-            return np.linalg.norm(diff.data, ord=self.order)**2
-        else:
-            return np.linalg.norm(diff     , ord=self.order)**2
-
-    def predict(self, xraw, zs):
-        values = []
-
-        for z in zs:
-            values.append(-self.distance(xraw, z[0]) / (self.norm if self.norm != 0 else 1))
-
-        return values
-
-    def update(self, xraw, zs, r):
-
-        for z in zs:
-            self.i += 1
-            new_observation = self.distance(xraw, z[0])
-
-            if self.stat == 'max':
-                self.norm = max(self.norm, new_observation)
-
-            if self.stat == 'mean':
-                self.norm = (1-1/self.i) * self.norm + (1/self.i) * new_observation
-
-class AdditionScorer:
-
-    def __init__(self, scorers):
-        self.scorers = scorers
-
-    def predict(self, xraw, zs):
-        return list(map(sum,zip(*[scorer.predict(xraw,zs) for scorer in self.scorers])))
-
-    def update(self, xraw, zs, r):
-        for scorer in self.scorers:
-            scorer.update(xraw, zs, r)
-
-    @property
-    def params(self):
-        return ('addition', [ scorer.params for scorer in self.scorers])

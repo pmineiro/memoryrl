@@ -114,9 +114,9 @@ class InteractionExample(MemExample):
 
 class DifferenceExample(MemExample):
 
-    def __init__(self, element_wise_op:str="square") -> None:
+    def __init__(self, element_wise_op:str="^2") -> None:
 
-        assert element_wise_op in ["square", "abs", "none"]
+        assert element_wise_op in ["^2", "abs", "none"]
 
         self._element_wise_op = element_wise_op
  
@@ -136,10 +136,10 @@ class DifferenceExample(MemExample):
         if self._element_wise_op == "none":
             return diff
         
-        if self._element_wise_op == "square" and sp.issparse(diff):
+        if self._element_wise_op == "^2" and sp.issparse(diff):
             return diff.power(2) #fastest way to calculate this that I could find
 
-        if self._element_wise_op == "square" and not sp.issparse(diff):
+        if self._element_wise_op == "^2" and not sp.issparse(diff):
             return diff**2
 
         if self._element_wise_op == "abs":
