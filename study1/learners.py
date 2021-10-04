@@ -179,12 +179,8 @@ class MemorizedLearner:
         self._times   = [0, 0]
 
     @property
-    def family(self) -> str:
-        return "CMT_Memorized"
-
-    @property
     def params(self) -> Dict[str,Any]:
-        return { 'e':self._epsilon, **self._mem.params }
+        return { 'family': 'CMT_Memorized', 'e':self._epsilon, **self._mem.params }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -248,12 +244,8 @@ class ResidualLearner:
         self._times    = [0,0]
 
     @property
-    def family(self) -> str:
-        return "CMT_Residual"
-
-    @property
     def params(self) -> Dict[str,Any]:
-        return  { 'e':self._epsilon,  **self._mem.params }
+        return  { 'family':'CMT_Residual', 'e':self._epsilon,  **self._mem.params }
 
     def toadf(self, context, actions, label=None):
 
@@ -394,11 +386,11 @@ class MemCorralLearner(CorralLearner):
 
         def base_name(i):
             if i == 0:
-                return self._base_learners[i].family
+                return self._base_learners[i].params["family"]
             else:
-                return f"{self._base_learners[i].family}({self._base_learners[i].params})"
+                return self._base_learners[i].full_name
             
-        return { "type":self._type, "B": [ base_name(i) for i in range(len(self._base_learners)) ] }
+        return { 'family':'corral', "type":self._type, "B": [ base_name(i) for i in range(len(self._base_learners)) ] }
 
 
 class MemorizedVW:
@@ -409,12 +401,8 @@ class MemorizedVW:
         self._epsilon = epsilon
 
     @property
-    def family(self) -> str:
-        return "VW_Memorized"
-
-    @property
     def params(self) -> Dict[str,Any]:
-        return { 'e':self._epsilon }
+        return { "family": "VW_Memorized", 'e':self._epsilon }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""

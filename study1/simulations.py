@@ -6,12 +6,17 @@ import numpy as np
 from scipy.spatial.distance import cdist
 
 from coba.pipes import Filter
-from coba.simulations import LambdaSimulation, Interaction
+from coba.simulations import LambdaSimulation, Interaction, SimulationFilter
 from coba.registry import coba_registry_class
 from coba.random import CobaRandom
 
 @coba_registry_class("features_scaled_to_zero_one")
-class EuclidNormed(Filter[Iterable[Interaction],Iterable[Interaction]]):
+class EuclidNormed(SimulationFilter):
+    
+    @property
+    def params(self):
+        return {"zero_one": True}
+
     def filter(self, interactions: Iterable[Interaction]) -> Iterable[Interaction]:
         
         materialized_interactions = list(interactions)
@@ -44,24 +49,22 @@ class EuclidNormed(Filter[Iterable[Interaction],Iterable[Interaction]]):
                 yield Interaction(new_context, interaction.actions, interaction.reveals)
             else:
                 yield Interaction(new_context, interaction.actions, reveals=interaction.reveals, **interaction.results)
-    
-    def __repr__(self) -> str:
-        return "features_scaled_to_zero_one"
-    
-    def __str__(self) -> str:
-        return self.__repr__()
 
 @coba_registry_class("bernoulli_flip")
 class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
     
-    def __init__(self, probability=0) -> None:
-        self._probability = probability
+    def __init__(self, prob=0) -> None:
+        self._prob = prob
         self._rng = CobaRandom(1)
+
+    @property
+    def params(self):
+        return {"flip": self._prob}
 
     def filter(self, interactions: Iterable[Interaction]) -> Iterable[Interaction]:
 
         for interaction in interactions:
-            if self._probability > 0 and self._rng.random() <= self._probability:
+            if self._prob > 0 and self._rng.random() <= self._prob:
                 #we flip them all, otherwise the chance of us receiving
                 #receiving an error for a wrong action selection will be
                 #much lower than a right action selection
@@ -70,12 +73,6 @@ class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
                 noised_labels = [r for r in interaction.reveals]
 
             yield Interaction(interaction.context, interaction.actions, reveals=noised_labels, reward=interaction.reveals)
-    
-    def __repr__(self) -> str:
-        return f"bernoulli_flip({self._probability})"
-    
-    def __str__(self) -> str:
-        return self.__repr__()
 
 class MemorizableSimulation(LambdaSimulation):
 
