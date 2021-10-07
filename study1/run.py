@@ -15,7 +15,7 @@ from examples import InteractionExample, DifferenceExample
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner
 
-experiment = 'full2'
+experiment = 'full3'
 processes  = 8
 chunk_by   = 'task'
 
@@ -26,7 +26,7 @@ c            = 40
 megalr       = 0.1
 
 json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}_2.log"
+log  = f"./study1/outcomes/{experiment}_1.log.gz"
 
 scorers = [
    RankScorer(baser=Base("none"), exampler=DifferenceExample("^2")),

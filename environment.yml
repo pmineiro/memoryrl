@@ -14,4 +14,4 @@ dependencies:
         - notebook
         - vowpalwabbit
         - sklearn
-        - coba==3.4.*
+        - coba==3.5.*
