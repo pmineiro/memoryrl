@@ -391,25 +391,3 @@ class MemCorralLearner(CorralLearner):
                 return self._base_learners[i].full_name
             
         return { 'family':'corral', "type":self._type, "B": [ base_name(i) for i in range(len(self._base_learners)) ] }
-
-
-class MemorizedVW:
-
-    def __init__(self, epsilon: float) -> None:
-        assert 0 <= epsilon and epsilon <= 1
-        self._vw = VowpalLearner(f"--cb_explore_adf --epsilon {epsilon} --random_seed 1 --cb_type dm --interactions ssa --interactions sa --ignore_linear s")
-        self._epsilon = epsilon
-
-    @property
-    def params(self) -> Dict[str,Any]:
-        return { "family": "VW_Memorized", 'e':self._epsilon }
-
-    def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
-        """Choose which action index to take."""
-
-        return self._vw.predict(context, actions)
-
-    def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, info: Any) -> None:
-        """Learn about the result of an action that was taken in a context."""
-        
-        self._vw.learn(context, action, reward, 1, info)

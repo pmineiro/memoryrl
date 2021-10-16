@@ -192,7 +192,6 @@ class RankScorer:
     def __str__(self) -> str:
         return self.__repr__()
 
-
 class UCBScorer:
     def __init__(self):
         self._ucb_learner = UcbBanditLearner()

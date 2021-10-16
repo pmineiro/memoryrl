@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from coba.learners import VowpalMediator
 from vowpalwabbit import pyvw
 import scipy.sparse as sp
 
@@ -113,6 +114,61 @@ class InteractionExample(MemExample):
         return self.__repr__()
 
 class DifferenceExample(MemExample):
+
+    def __init__(self, element_wise_op:str="^2") -> None:
+
+        assert element_wise_op in ["^2", "abs", "none"]
+
+        self._element_wise_op = element_wise_op
+ 
+    def interactions(self):
+        return []
+
+    def ignored(self):
+        return []
+
+    def feat(self, ex1, ex2):
+
+        ef1 = ex1.features()
+        ef2 = ex2.features()
+
+        diff = ef1-ef2
+
+        if self._element_wise_op == "none":
+            return diff
+        
+        if self._element_wise_op == "^2" and sp.issparse(diff):
+            return diff.power(2) #fastest way to calculate this that I could find
+
+        if self._element_wise_op == "^2" and not sp.issparse(diff):
+            return diff**2
+
+        if self._element_wise_op == "abs":
+            return abs(diff)
+
+        raise Exception("something unexpected happened")
+
+    def make_example(self, vw, query, memory, base=0, label=0, weight=1):
+
+        feats = self.feat(query, memory)
+
+        if isinstance(feats, sp.spmatrix):            
+            vw_feats = VowpalMediator.prep_features(list(zip(feats.indices.tolist(), feats.data.tolist())))
+        else:
+            vw_feats = VowpalMediator.prep_features(feats[0].tolist())
+
+        ex = pyvw.example(vw, {"x": vw_feats})
+        ex.set_label_string(f"{label} {weight} {base}")
+
+        return ex
+    
+    def __repr__(self) -> str:
+        return f"diff({self._element_wise_op})"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+class OG_DifferenceExample(MemExample):
 
     def __init__(self, element_wise_op:str="^2") -> None:
 
