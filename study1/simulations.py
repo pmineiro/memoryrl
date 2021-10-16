@@ -12,13 +12,13 @@ from coba.random import CobaRandom
 
 @coba_registry_class("features_scaled_to_zero_one")
 class EuclidNormed(SimulationFilter):
-    
+
     @property
     def params(self):
         return {"zero_one": True}
 
     def filter(self, interactions: Iterable[Interaction]) -> Iterable[Interaction]:
-        
+
         materialized_interactions = list(interactions)
 
         feature_max = {}
@@ -27,7 +27,7 @@ class EuclidNormed(SimulationFilter):
         for interaction in materialized_interactions:
             context     = interaction.context
             keys_values = context.items() if isinstance(context,dict) else enumerate(context)
-            
+
             for k,v in keys_values:
                 if isinstance(v,Number):
                     feature_max[k] = max(feature_max.get(k,-math.inf),v)
@@ -45,13 +45,10 @@ class EuclidNormed(SimulationFilter):
                 else:
                     new_context[k] = v
 
-            if 'reward' in interaction.results and len(interaction.results) == 1:
-                yield Interaction(new_context, interaction.actions, interaction.reveals)
-            else:
                 yield Interaction(new_context, interaction.actions, reveals=interaction.reveals, **interaction.results)
 
 @coba_registry_class("bernoulli_flip")
-class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
+class BernoulliLabelNoise(SimulationFilter):
     
     def __init__(self, prob=0) -> None:
         self._prob = prob
@@ -72,7 +69,7 @@ class BernoulliLabelNoise(Filter[Iterable[Interaction],Iterable[Interaction]]):
             else:
                 noised_labels = [r for r in interaction.reveals]
 
-            yield Interaction(interaction.context, interaction.actions, reveals=noised_labels, reward=interaction.reveals)
+            yield Interaction(interaction.context, interaction.actions, reveals=noised_labels, reward=interaction.reveals, **interaction.results)
 
 class MemorizableSimulation(LambdaSimulation):
 

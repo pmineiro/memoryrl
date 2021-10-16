@@ -15,8 +15,8 @@ from examples import InteractionExample, DifferenceExample
 from coba.benchmarks import Benchmark
 from coba.learners import VowpalLearner
 
-experiment = 'full3'
-processes  = 8
+experiment = 'full4'
+processes  = 7
 chunk_by   = 'task'
 
 max_memories = 3000
@@ -48,10 +48,12 @@ feedbacks = [
 
 cmts    = [ CMT_Implemented(max_memories, scorer=s, feedback=f, c=c, d=d, megalr=megalr) for s,f in zip(scorers,feedbacks)]
 mem_cbs = [ MemorizedLearner(epsilon, cmt) for cmt in cmts]
-vw_cb   = VowpalLearner(epsilon=epsilon,seed=1)
+vw_cb   = VowpalLearner(epsilon=epsilon,seed=1,power_t=0)
 
 learners =  [ MemCorralLearner([vw_cb, mem_cb], eta=.075, T=10000, type="off-policy") for mem_cb in mem_cbs ]
 learners += [ vw_cb ]
+
+learners = [learners[4], learners[6]]
 
 if __name__ == '__main__':
    Benchmark.from_file(json).processes(processes).chunk_by(chunk_by).evaluate(learners, log).filter_fin().plot_learners()
