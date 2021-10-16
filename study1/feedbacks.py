@@ -10,8 +10,6 @@ class RewardFeedback:
     def __str__(self) -> str:
         return self.__repr__()
 
-
-
 class DeviationFeedback:
 
     def __init__(self, type:str = "^2"):

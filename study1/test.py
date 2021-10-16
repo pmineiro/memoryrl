@@ -28,25 +28,24 @@ shuffle    = [1,2]
 take       = 1000
 
 simulations = [
-   ValidationSimulation(2000,sparse=False)
+   ValidationSimulation(500,sparse=False)
 ]
 
 scorers = [
-   RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs")),
-   RankScorer(baser=Base("cos") , exampler=OG_DifferenceExample("abs")),
+   RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs"))
 ]
 
 feedbacks = [
    DeviationFeedback("^2"),
-   DeviationFeedback("^2"),
 ]
 
-cmts    = [ CMT_Implemented(max_memories, scorer=s, feedback=f, c=c, d=d, megalr=megalr) for s,f in zip(scorers,feedbacks)]
-mem_cbs = [ MemorizedLearner(epsilon, cmt) for cmt in cmts]
-vw_cb   = VowpalLearner(epsilon=epsilon,seed=1,power_t=0)
+vw_cb = VowpalLearner(epsilon=epsilon,seed=1,power_t=0)
 
-learners =  [ MemCorralLearner([vw_cb, mem_cb], eta=.075, T=10000, type="off-policy") for mem_cb in mem_cbs ]
-learners += [ vw_cb, RandomLearner() ]
+cmts     = [ CMT_Implemented(max_memories, scorer=s, feedback=f, c=c, d=d, megalr=megalr) for s,f in zip(scorers,feedbacks)]
+mem_cbs  = [ MemorizedLearner(epsilon, cmt) for cmt in cmts]
+learners = [ MemCorralLearner([vw_cb, mem_cb], eta=.075, T=10000, type="off-policy") for mem_cb in mem_cbs ]
+
+learners += [ vw_cb ]
 
 if __name__ == '__main__':
    Benchmark(simulations, take=take, shuffle=shuffle).processes(processes).chunk_by('task').evaluate(learners).plot_learners()
