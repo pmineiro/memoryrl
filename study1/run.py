@@ -15,8 +15,6 @@ from examples import InteractionExample, DifferenceExample
 from coba.benchmarks import Benchmark, Result
 from coba.learners import VowpalLearner
 
-Result.from_file("./study1/outcomes/full4_3.log.gz").filter_fin().interactions.to_tuples()
-
 experiment = 'test'
 processes  = 7
 chunk_by   = 'task'
