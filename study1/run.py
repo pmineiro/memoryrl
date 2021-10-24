@@ -5,7 +5,7 @@ os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['GOTO_NUM_THREADS'    ] = '1'
 os.environ['OMP_NUM_THREADS'     ] = '1'
 
-import simulations
+from itertools import product
 
 from feedbacks import DeviationFeedback, RewardFeedback
 from learners import MemorizedLearner, MemCorralLearner, CMT_Implemented
@@ -18,9 +18,9 @@ from coba.learners import VowpalLearner
 
 from sklearn.feature_extraction import FeatureHasher
 
-experiment = 'test'
+experiment = 'full5'
 processes  = 1
-chunk_by   = 'source'
+chunk_by   = 'task'
 
 max_memories = 3000
 epsilon      = 0.1
@@ -29,29 +29,26 @@ c            = 40
 megalr       = 0.1
 
 json = f"./study1/experiments/{experiment}.json"
-log  = None#f"./study1/outcomes/{experiment}_2.log.gz"
+log  = f"./study1/outcomes/{experiment}_2.log.gz"
 
 scorers = [
    RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs")),
 ]
 
 routers = [
-   Logistic_SK(),
-   Logistic_VW()
+   Logistic_VW(power_t=0),
+   Logistic_VW(power_t=1/2)
 ]
 
 feedbacks = [
    DeviationFeedback("^2"),
 ]
 
-vw_cb_1 = VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0")
-vw_cb_2 = VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1")
-
-cmts     = [ CMT_Implemented(max_memories, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr) for s,r,f in zip(scorers,routers,feedbacks)]
-mem_cbs  = [ MemorizedLearner(epsilon, cmt) for cmt in cmts]
-learners = [ MemCorralLearner([vw_cb_1, mem_cb], eta=.075, T=10000, type="off-policy") for mem_cb in mem_cbs ]
-
-learners += [ vw_cb_1 ]
+learners = [
+   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0"),
+   * [ CMT_Implemented(3000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr) for s,r,f in product(scorers,routers,feedbacks) ],
+   * [ CMT_Implemented(6000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr) for s,r,f in product(scorers,routers,feedbacks) ]
+]
 
 if __name__ == '__main__':
    Benchmark.from_file(json).processes(processes).chunk_by(chunk_by).evaluate(learners, log).filter_fin().plot_learners()

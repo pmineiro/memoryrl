@@ -20,16 +20,17 @@ class Logistic_VW:
         def __reduce__(self):
             return (Logistic_VW,())
 
-    def __init__(self) -> None:
-        self._vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t 0 --link=glf1')
-        self._index = -1
+    def __init__(self, power_t:float) -> None:
+        self._power_t = power_t
+        self._vw      = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t {power_t} --link=glf1')
+        self._index   = -1
 
     def __call__(self) -> Logistic_VW_Router:
         self._index += 1
         return Logistic_VW.Logistic_VW_Router(self._vw, self._index)
         
     def __repr__(self) -> str:
-        return f"vw"
+        return f"vw(power_t={self._power_t})"
     
     def __str__(self) -> str:
         return self.__repr__()
