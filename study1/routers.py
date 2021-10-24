@@ -21,18 +21,28 @@ class Logistic_VW:
             return (Logistic_VW,())
 
     def __init__(self, power_t:float) -> None:
-        #we add 20 to bits which means we can have 2**20 internal nodes
-        self._power_t = power_t
-        self._vw      = pyvw.vw(f'--quiet -b {bits+20} --loss_function logistic --noconstant --power_t {power_t} --link=glf1 --sparse_weights')
+        # We add 10 to bits which means we can represent
+        # 2**10 internal nodes for each vw instance that we create
+        # VW expects a 32 bit unsinged integer so our hash value plus the offset must be < 2**32
+        # This means we have to create multiple VW instances to make sure we stay below this
+        self._vws     = [] 
         self._index   = -1
+        self._power_t = power_t
 
     def __call__(self) -> Logistic_VW_Router:
         self._index += 1
-        return Logistic_VW.Logistic_VW_Router(self._vw, self._index)
-        
+
+        if self._index % 1000 == 0:
+            self._vws.append(pyvw.vw(f'--quiet -b {bits+10} --loss_function logistic --noconstant --power_t {self._power_t} --link=glf1 --sparse_weights'))
+
+        vw    = self._vws[int(self._index/1000)]
+        index = self._index % 1000
+
+        return Logistic_VW.Logistic_VW_Router(vw, index)
+
     def __repr__(self) -> str:
         return f"vw(power_t={self._power_t})"
-    
+
     def __str__(self) -> str:
         return self.__repr__()
 
