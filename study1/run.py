@@ -29,7 +29,7 @@ c            = 40
 megalr       = 0.1
 
 json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}_2.log.gz"
+log  = f"./study1/outcomes/{experiment}_1.log.gz"
 
 scorers = [
    RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs")),
