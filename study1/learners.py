@@ -18,7 +18,7 @@ from feedbacks import DeviationFeedback
 from examples import IdentityExample
 
 logn = 500
-bits = 16
+bits = 20
 
 class CMT_Implemented:
 

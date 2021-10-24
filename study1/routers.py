@@ -1,7 +1,7 @@
 from vowpalwabbit import pyvw
 from examples import IdentityExample
 
-bits = 16
+bits = 20
 
 class Logistic_VW:
 
@@ -21,8 +21,9 @@ class Logistic_VW:
             return (Logistic_VW,())
 
     def __init__(self, power_t:float) -> None:
+        #we add 20 to bits which means we can have 2**20 internal nodes
         self._power_t = power_t
-        self._vw      = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t {power_t} --link=glf1')
+        self._vw      = pyvw.vw(f'--quiet -b {bits+20} --loss_function logistic --noconstant --power_t {power_t} --link=glf1 --sparse_weights')
         self._index   = -1
 
     def __call__(self) -> Logistic_VW_Router:

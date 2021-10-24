@@ -19,8 +19,8 @@ from coba.learners import VowpalLearner
 from sklearn.feature_extraction import FeatureHasher
 
 experiment = 'full5'
-processes  = 1
-chunk_by   = 'task'
+processes  = 8
+chunk_by   = 'source'
 
 max_memories = 3000
 epsilon      = 0.1
@@ -29,7 +29,7 @@ c            = 40
 megalr       = 0.1
 
 json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}_1.log.gz"
+log  = f"./study1/outcomes/{experiment}_2.log.gz"
 
 scorers = [
    RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs")),
@@ -37,19 +37,17 @@ scorers = [
 
 routers = [
    Logistic_VW(power_t=0.0),
-   Logistic_VW(power_t=0.5)
 ]
 
 feedbacks = [
    DeviationFeedback("^2"),
 ]
 
-learners = [
-   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.0"),
-   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.5"),
-   * [ MemorizedLearner(epsilon, CMT_Implemented(3000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr)) for s,r,f in product(scorers, routers, feedbacks) ],
-   * [ MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr)) for s,r,f in product(scorers, routers, feedbacks) ]
-]
+#VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.0"),
+#VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.5"),
+
+#learners = [ MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr)) for s,r,f in product(scorers, routers, feedbacks) ]
+learners = [ MemorizedLearner(epsilon, CMT_Implemented(3000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr)) for s,r,f in product(scorers, routers, feedbacks) ]
 
 if __name__ == '__main__':
    Benchmark.from_file(json).processes(processes).chunk_by(chunk_by).evaluate(learners, log).filter_fin().plot_learners()
