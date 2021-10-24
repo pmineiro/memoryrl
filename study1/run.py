@@ -36,8 +36,8 @@ scorers = [
 ]
 
 routers = [
-   Logistic_VW(power_t=0),
-   Logistic_VW(power_t=1/2)
+   Logistic_VW(power_t=0.0),
+   Logistic_VW(power_t=0.5)
 ]
 
 feedbacks = [

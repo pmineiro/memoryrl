@@ -36,7 +36,7 @@ class Logistic_VW:
         return self.__repr__()
 
     def __reduce__(self):
-        return (type(self),())
+        return (type(self),(self._power_t,))
 
 class Logistic_SK:
 
