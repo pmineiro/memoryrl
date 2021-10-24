@@ -45,7 +45,8 @@ feedbacks = [
 ]
 
 learners = [
-   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0"),
+   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.0"),
+   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.5"),
    * [ CMT_Implemented(3000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr) for s,r,f in product(scorers,routers,feedbacks) ],
    * [ CMT_Implemented(6000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr) for s,r,f in product(scorers,routers,feedbacks) ]
 ]
