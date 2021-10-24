@@ -76,7 +76,7 @@ class CMT_Implemented:
 
     @property
     def params(self):
-        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "a": self._alpha, "fb": self._signal, "scr": self._scorer, "rou": self._router }
+        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "a": self._alpha, "fb": str(self._signal), "scr": str(self._scorer), "rou": str(self._router) }
 
     def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
 
