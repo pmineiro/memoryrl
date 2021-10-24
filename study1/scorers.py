@@ -15,14 +15,14 @@ class Base:
 
     def __init__(self, base="none", maxnorm=False):
 
-        assert base in ["none", "mem", "l1", "l2", "l2^2", "cos"]
+        assert base in ["none", "l1", "l2", "l2^2", "cos"]
 
         self.base    = base
         self.maxnorm = maxnorm
         self.max     = -np.inf
 
-    def calculate_base(self, query_context, mem_context, mem_value):
-        base = self._calculate_base(query_context, mem_context, mem_value)
+    def calculate_base(self, query_context, mem_context):
+        base = self._calculate_base(query_context, mem_context)
         self.max = max(self.max,base)
 
         if self.maxnorm:
@@ -30,17 +30,14 @@ class Base:
         else:
             return base
 
-    def _calculate_base(self, query_context, mem_context, mem_value):
+    def _calculate_base(self, query_context, mem_context):
         if self.base == "none":
             return 0
 
-        if self.base == "mem":
-            return mem_value
+        ef1 = query_context.features()
+        ef2 = mem_context.features()
 
         if self.base == "l1":
-            ef1 = query_context.features()
-            ef2 = mem_context.features()
-
             if sp.issparse(ef1):
                 data = (ef1-ef2).data
                 return 0 if len(data) == 0 else distance.minkowski((ef1-ef2).data,0,p=1)
@@ -48,9 +45,6 @@ class Base:
                 return distance.minkowski(ef1,ef2,p=1)
 
         if self.base == "l2":
-            ef1 = query_context.features()
-            ef2 = mem_context.features()
-
             if sp.issparse(ef1):
                 data = (ef1-ef2).data
                 return 0 if len(data) == 0 else distance.euclidean(data,0)
@@ -58,9 +52,6 @@ class Base:
                 return distance.euclidean(ef1,ef2)
 
         if self.base == "l2^2":
-            ef1 = query_context.features()
-            ef2 = mem_context.features()
-
             if sp.issparse(ef1):
                 data = (ef1-ef2).data
                 return 0 if len(data) == 0 else distance.sqeuclidean((ef1-ef2).data,0)
@@ -68,15 +59,46 @@ class Base:
                 return distance.sqeuclidean(ef1,ef2)
 
         if self.base == "cos":
-            ef1 = query_context.features()
-            ef2 = mem_context.features()
-
             if sp.issparse(ef1):
                 n1 = distance.euclidean(ef1.data,0)
                 n2 = distance.euclidean(ef2.data,0)
-                return (1-(ef1.T @ ef2)[0,0]/(n1*n2))/2
+
+                return (1-self._sparse_dp(ef1,ef2)/(n1*n2))/2
             else:
                 return distance.cosine(ef1, ef2) / 2
+
+    def _sparse_dp(self,x1,x2):
+
+        x1.sort_indices()
+        x2.sort_indices()
+
+        idx1 = x1.indices
+        idx2 = x2.indices
+
+        dat1 = x1.data
+        dat2 = x2.data
+
+        i=0
+        j=0
+
+        v = 0
+
+        while True:
+
+            if i == len(idx1) or j == len(idx2):
+                return v
+
+            idx1_i = idx1[i]
+            idx2_j = idx2[j]
+
+            if idx1_i == idx2_j:
+                v += dat1[i]*dat2[j]
+            
+            if idx1_i <= idx2_j:
+                i += 1
+
+            if idx2_j <= idx1_i:
+                j += 1
 
     def __repr__(self) -> str:
         return f"base({self.base})"
@@ -114,7 +136,7 @@ class RegressionScorer:
 
         for z in zs:
 
-            base    = 1-self.baser.calculate_base(xraw, z[0], z[1])
+            base    = 1-self.baser.calculate_base(xraw, z[0])
             example = self.exampler.make_example(self.vw, xraw, z[0], base)
             values.append(self.vw.predict(example))
             self.vw.finish_example(example)
@@ -124,7 +146,7 @@ class RegressionScorer:
     def update(self, xraw, zs, r):
 
         self.t += 1
-        base    = 1-self.baser.calculate_base(xraw, zs[0][0], zs[0][1])
+        base    = 1-self.baser.calculate_base(xraw, zs[0][0])
         example = self.exampler.make_example(self.vw, xraw, zs[0][0], base, r)
         self.vw.learn(example)
         self.vw.finish_example(example)
@@ -163,7 +185,7 @@ class RankScorer:
         values = []
 
         for z in zs:
-            base    = -self.baser.calculate_base(xraw, z[0], z[1]) 
+            base    = -self.baser.calculate_base(xraw, z[0]) 
             example = self.exampler.make_example(self.vw, xraw, z[0], base)
             values.append(self.vw.predict(example))
             self.vw.finish_example(example)
@@ -175,13 +197,13 @@ class RankScorer:
         self.t += 1
 
         if len(zs) >= 1:
-            base    = -self.baser.calculate_base(xraw, zs[0][0], zs[0][1]) 
+            base    = -self.baser.calculate_base(xraw, zs[0][0]) 
             example = self.exampler.make_example(self.vw, xraw, zs[0][0], base, 1, r)
             self.vw.learn(example)
             self.vw.finish_example(example)
 
         if len(zs) >= 2:
-            base    = -self.baser.calculate_base(xraw, zs[1][0], zs[1][1]) 
+            base    = -self.baser.calculate_base(xraw, zs[1][0]) 
             example = self.exampler.make_example(self.vw, xraw, zs[1][0], base, -1, r)
             self.vw.learn(example)
             self.vw.finish_example(example)

@@ -1,7 +1,5 @@
-import time
 from math import log
 from heapq import heappush, heappop
-from random import Random
 
 class CMT:
     class Node:

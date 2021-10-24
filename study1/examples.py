@@ -1,5 +1,6 @@
 from abc import abstractmethod
-from coba.learners import VowpalMediator
+from itertools import count
+
 from vowpalwabbit import pyvw
 import scipy.sparse as sp
 
@@ -19,30 +20,15 @@ class MemExample:
 
 class IdentityExample(MemExample):
 
-    def _vw_featurize(self, ns, features):
-        
+    def __init__(self, offset=0):
+        self._offset = offset
+
+    def _vw_featurize(self, features):
         if isinstance(features, sp.spmatrix):
-            keys = list(map(str,features.indices))
-            vals = features.data
-            return list(zip(keys,vals))
-        elif isinstance(features, dict):
-            return [ (k,v) for k,v in features.items() if v != 0 ]
+            return list(zip((self._offset+features.indices).tolist(),features.data.tolist()))
         else:
-
-            final_features = list(zip(map(str,range(len(features[0]))), features[0]))
-
-            final_final_features = []
-
-            for k,v in final_features:
-                if v == 0: continue
-
-                if isinstance(v, str):
-                    final_final_features.append((ns+"_"+v,1))
-                else:
-                    final_final_features.append((ns+"_"+k,v))
-            
-            return final_final_features
-
+            return list(zip(count(self._offset), features[0].tolist()))
+    
     def interactions(self):
         return []
 
@@ -51,7 +37,7 @@ class IdentityExample(MemExample):
 
     def make_example(self, vw, features, base=None, label=None, weight=None):
 
-        x = self._vw_featurize("x", features)
+        x = self._vw_featurize(features)
 
         ex = pyvw.example(vw, {"x": x })
 
@@ -153,9 +139,9 @@ class DifferenceExample(MemExample):
         feats = self.feat(query, memory)
 
         if isinstance(feats, sp.spmatrix):            
-            vw_feats = VowpalMediator.prep_features(list(zip(feats.indices.tolist(), feats.data.tolist())))
+            vw_feats = list(zip(feats.indices.tolist(), feats.data.tolist()))
         else:
-            vw_feats = VowpalMediator.prep_features(feats[0].tolist())
+            vw_feats = list(enumerate(feats[0].tolist()))
 
         ex = pyvw.example(vw, {"x": vw_feats})
         ex.set_label_string(f"{label} {weight} {base}")

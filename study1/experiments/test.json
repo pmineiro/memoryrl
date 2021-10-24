@@ -1,5 +1,11 @@
 {
-    "simulations": [ 
-        [ {"OpenmlSimulation": 1459 }, { "Shuffle": [100], "method": "foreach" }, {"Take": 10000 } ] 
+    "variables": {
+        "$openmls" : { "OpenmlSimulation": [180], "kwargs": { "nominal_as_str":true }, "method": "foreach" },
+        "$shuffles": { "Shuffle"         : [100], "method": "foreach" },
+        "$scale"   : { "Scale"           : ["min", "minmax"]          },
+        "$cycle"   : { "Cycle"           : 15000                      }
+    },
+    "simulations": [
+        ["$openmls", { "Take": 5000 } ]
     ]
 }

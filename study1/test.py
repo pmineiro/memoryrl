@@ -1,6 +1,6 @@
 import os
 
-from coba.learners.core import RandomLearner
+from itertools import product
 
 #this is taken from https://github.com/xianyi/OpenBLAS
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -12,6 +12,7 @@ from learners import ResidualLearner, MemorizedLearner, MemCorralLearner, CMT_Im
 from scorers import RankScorer, RegressionScorer, UCBScorer, Base
 from feedbacks import DeviationFeedback, RewardFeedback
 from examples import InteractionExample, DifferenceExample, OG_DifferenceExample
+from routers import Logistic_SK, Logistic_VW
 
 from coba.simulations import ValidationSimulation, OpenmlSimulation
 from coba.benchmarks import Benchmark
@@ -25,27 +26,33 @@ megalr       = 0.1
 
 processes  = 4
 shuffle    = [1,2]
-take       = 1000
+take       = 500
 
 simulations = [
-   ValidationSimulation(500,sparse=False)
+   ValidationSimulation(500,sparse=True)
 ]
 
 scorers = [
-   RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs"))
+   RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs")),
+]
+
+routers = [
+   Logistic_SK(),
+   Logistic_VW()
 ]
 
 feedbacks = [
    DeviationFeedback("^2"),
 ]
 
-vw_cb = VowpalLearner(epsilon=epsilon,seed=1,power_t=0)
+vw_cb_1 = VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0")
 
-cmts     = [ CMT_Implemented(max_memories, scorer=s, feedback=f, c=c, d=d, megalr=megalr) for s,f in zip(scorers,feedbacks)]
+cmts     = [ CMT_Implemented(max_memories, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr) for s,r,f in product(scorers,routers,feedbacks)]
 mem_cbs  = [ MemorizedLearner(epsilon, cmt) for cmt in cmts]
-learners = [ MemCorralLearner([vw_cb, mem_cb], eta=.075, T=10000, type="off-policy") for mem_cb in mem_cbs ]
+learners = [ MemCorralLearner([vw_cb_1, mem_cb], eta=.075, T=10000, type="off-policy") for mem_cb in mem_cbs ]
 
-learners += [ vw_cb ]
+learners = mem_cbs
+learners += [ vw_cb_1 ]
 
 if __name__ == '__main__':
    Benchmark(simulations, take=take, shuffle=shuffle).processes(processes).chunk_by('task').evaluate(learners).plot_learners()

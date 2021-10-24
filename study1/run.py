@@ -9,15 +9,18 @@ import simulations
 
 from feedbacks import DeviationFeedback, RewardFeedback
 from learners import MemorizedLearner, MemCorralLearner, CMT_Implemented
+from routers import Logistic_VW, Logistic_SK
 from scorers import RankScorer, RegressionScorer, UCBScorer, Base
 from examples import InteractionExample, DifferenceExample
 
 from coba.benchmarks import Benchmark, Result
 from coba.learners import VowpalLearner
 
+from sklearn.feature_extraction import FeatureHasher
+
 experiment = 'test'
-processes  = 7
-chunk_by   = 'task'
+processes  = 1
+chunk_by   = 'source'
 
 max_memories = 3000
 epsilon      = 0.1
@@ -26,10 +29,15 @@ c            = 40
 megalr       = 0.1
 
 json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}_2.log.gz"
+log  = None#f"./study1/outcomes/{experiment}_2.log.gz"
 
 scorers = [
    RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs")),
+]
+
+routers = [
+   Logistic_SK(),
+   Logistic_VW()
 ]
 
 feedbacks = [
@@ -39,11 +47,11 @@ feedbacks = [
 vw_cb_1 = VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0")
 vw_cb_2 = VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1")
 
-cmts     = [ CMT_Implemented(max_memories, scorer=s, feedback=f, c=c, d=d, megalr=megalr) for s,f in zip(scorers,feedbacks)]
+cmts     = [ CMT_Implemented(max_memories, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr) for s,r,f in zip(scorers,routers,feedbacks)]
 mem_cbs  = [ MemorizedLearner(epsilon, cmt) for cmt in cmts]
 learners = [ MemCorralLearner([vw_cb_1, mem_cb], eta=.075, T=10000, type="off-policy") for mem_cb in mem_cbs ]
 
-learners = [ vw_cb_1, vw_cb_2 ]
+learners += [ vw_cb_1 ]
 
 if __name__ == '__main__':
    Benchmark.from_file(json).processes(processes).chunk_by(chunk_by).evaluate(learners, log).filter_fin().plot_learners()

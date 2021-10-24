@@ -6,7 +6,7 @@ import copy
 from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union, List
 
 import numpy as np
-from vowpalwabbit import pyvw
+
 from sklearn.feature_extraction import FeatureHasher
 
 from coba.encodings import InteractionTermsEncoder
@@ -18,7 +18,7 @@ from feedbacks import DeviationFeedback
 from examples import IdentityExample
 
 logn = 500
-bits = 20
+bits = 16
 
 class CMT_Implemented:
 
@@ -29,7 +29,7 @@ class CMT_Implemented:
             features = self._featurize(context, action, interactions)
 
             if isinstance(features[0],tuple):
-                self._features = FeatureHasher(n_features=2**16, input_type='pair').fit_transform([features])
+                self._features = FeatureHasher(n_features=2**bits, input_type='pair').fit_transform([features])
                 self._features.sort_indices()
             else:
                 #doing this because some code later that assumes we're working with sparse matrices
@@ -50,47 +50,12 @@ class CMT_Implemented:
         def __hash__(self) -> int:
             return self._hash
 
-    class LogisticModel_VW:
-        def __init__(self, *args, **kwargs):
-            self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t 1 --link=glf1')
-            self.exampler = IdentityExample()
-
-        def predict(self, xraw):
-            return self.vw.predict(self.exampler.make_example(self.vw, xraw.features()))
-
-        def update(self, xraw, y, w):
-            self.vw.learn(self.exampler.make_example(self.vw, xraw.features(), 0, y, w))
-
-        def __reduce__(self):
-            return (CMT_Implemented.LogisticModel_VW,())
-
-    class LogisticModel_SK:
-        def __init__(self):
-
-            from sklearn.linear_model import SGDClassifier
-
-            self.clf  = SGDClassifier(loss="log", average=True, learning_rate='constant', eta0=0.5)
-            self.is_fit = False
-            self.time = 0
-
-        def predict(self, x):
-            return 1 if not self.is_fit else self.clf.predict(self._domain(x))[0]
-
-        def update(self, x, y, w):
-            start = time.time()
-            self.clf.partial_fit(self._domain(x), [y], sample_weight=[w], classes=[-1,1])
-            self.is_fit = True
-            self.time += time.time()-start
-
-        def _domain(self, x):
-            return x.features()
-
-    def __init__(self, max_memories: int = 1000, router_type:str = 'sk', scorer=RankScorer(), feedback=DeviationFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0, sort:bool = False, alpha:float=0.25) -> None:
+    def __init__(self, max_memories: int = 1000, router:str = 'sk', scorer=RankScorer(), feedback=DeviationFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0, sort:bool = False, alpha:float=0.25) -> None:
 
         assert 1 <= max_memories
 
         self._max_memories = max_memories
-        self._router_type  = router_type
+        self._router       = router
         self._c            = c
         self._d            = d
         self._megalr       = megalr
@@ -99,7 +64,7 @@ class CMT_Implemented:
         self._sort         = sort
         self._alpha        = alpha
 
-        router_factory = CMT_Implemented.LogisticModel_SK if self._router_type == 'sk' else CMT_Implemented.LogisticModel_VW
+        router_factory = router
 
         self._scorer = copy.deepcopy(scorer)
         self._signal = feedback
@@ -111,7 +76,7 @@ class CMT_Implemented:
 
     @property
     def params(self):
-        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "a": self._alpha, "fb": self._signal, "scr": self._scorer }
+        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "a": self._alpha, "fb": self._signal, "scr": self._scorer, "rou": self._router }
 
     def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
 
