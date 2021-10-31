@@ -3,19 +3,18 @@ import random
 import math
 import copy
 
-from typing import Hashable, Sequence, Dict, Any, Optional, Tuple, Union, List
+from typing import Hashable, Sequence, Dict, Any, Tuple
 
 import numpy as np
 
 from sklearn.feature_extraction import FeatureHasher
 
 from coba.encodings import InteractionTermsEncoder
-from coba.learners import VowpalLearner, Learner, CorralLearner
+from coba.learners import Learner, CorralLearner
 
 from memory import CMT
 from scorers import RankScorer
 from feedbacks import DeviationFeedback
-from examples import IdentityExample
 
 logn = 500
 bits = 20
@@ -32,8 +31,6 @@ class CMT_Implemented:
                 self._features = FeatureHasher(n_features=2**bits, input_type='pair').fit_transform([features])
                 self._features.sort_indices()
             else:
-                #doing this because some code later that assumes we're working with sparse matrices
-                #self._features = sp.csr_matrix((features,([0]*len(features),range(len(features)))), shape=(1,len(features)))
                 self._features = np.array([features])
 
             self._hash = hash((context,action))
@@ -45,6 +42,7 @@ class CMT_Implemented:
             return self._features
 
         def _featurize(self, context, action, interactions):
+            
             return InteractionTermsEncoder(interactions).encode(x=context,a=action)
 
         def __hash__(self) -> int:

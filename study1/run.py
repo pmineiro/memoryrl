@@ -16,10 +16,8 @@ from examples import InteractionExample, DifferenceExample
 from coba.benchmarks import Benchmark, Result
 from coba.learners import VowpalLearner
 
-from sklearn.feature_extraction import FeatureHasher
-
-experiment = 'full5'
-processes  = 8
+experiment = 'full6'
+processes  = 1
 chunk_by   = 'source'
 
 max_memories = 3000
@@ -29,25 +27,23 @@ c            = 40
 megalr       = 0.1
 
 json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}_2.log.gz"
+log  = f"./study1/outcomes/{experiment}_1.log.gz"
 
-scorers = [
-   RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs")),
+scorer   = RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs"))
+router   = Logistic_VW(power_t=0.0)
+feedback = DeviationFeedback("^2")
+
+corral_learners = [
+   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.0"), 
+   MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=megalr))
 ]
 
-routers = [
-   Logistic_VW(power_t=0.0),
+learners = [
+   MemorizedLearner(epsilon, CMT_Implemented(3000, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=megalr)),
+   MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=megalr)),
+   MemCorralLearner(corral_learners, eta=.075, T=10000, type="off-policy"),
+   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.0") 
 ]
-
-feedbacks = [
-   DeviationFeedback("^2"),
-]
-
-#VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.0"),
-#VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.5"),
-
-#learners = [ MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr)) for s,r,f in product(scorers, routers, feedbacks) ]
-learners = [ MemorizedLearner(epsilon, CMT_Implemented(3000, scorer=s, router=r, feedback=f, c=c, d=d, megalr=megalr)) for s,r,f in product(scorers, routers, feedbacks) ]
 
 if __name__ == '__main__':
    Benchmark.from_file(json).processes(processes).chunk_by(chunk_by).evaluate(learners, log).filter_fin().plot_learners()
