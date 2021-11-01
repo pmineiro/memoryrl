@@ -33,17 +33,17 @@ scorer   = RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs"))
 router   = Logistic_VW(power_t=0.0)
 feedback = DeviationFeedback("^2")
 
-corral_learners = [
-   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.0"), 
-   MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=megalr))
-]
+learners = []
 
-learners = [
-   MemorizedLearner(epsilon, CMT_Implemented(3000, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=megalr)),
-   MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=megalr)),
-   MemCorralLearner(corral_learners, eta=.075, T=10000, type="off-policy"),
-   VowpalLearner("--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon 0.1 --random_seed 1 --power_t 0.0") 
-]
+for c in [10,20,40,80,120]:
+    for d in [4, 40, 80]:
+        for m in [0, 0.1, 0.2]:
+            if c == 40 and d in [4,40] and m == 0.1: continue
+            learners.append(MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=m)))
+            learners.append(MemCorralLearner([
+                VowpalLearner(f"--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon {epsilon} --random_seed 1 --power_t 0.0"),
+                MemorizedLearner(epsilon, CMT_Implemented(6000, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=m))
+            ], eta=.075, T=10000, type="off-policy"))
 
 if __name__ == '__main__':
    Benchmark.from_file(json).processes(processes).chunk_by(chunk_by).evaluate(learners, log).filter_fin().plot_learners()
