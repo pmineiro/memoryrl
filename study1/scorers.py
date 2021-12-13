@@ -1,3 +1,6 @@
+from abc import ABC, abstractmethod
+from typing import Sequence
+
 from coba.random import CobaRandom
 from coba.learners import UcbBanditLearner
 from vowpalwabbit import pyvw
@@ -7,15 +10,25 @@ from scipy.spatial import distance
 import numpy as np
 import scipy.sparse as sp
 
-from examples import MemExample, InteractionExample, DifferenceExample
+from examples import Example, InteractionExample, DiffExample
 
 bits = 20
 
-class Base:
+class Scorer(ABC):
+
+    @abstractmethod
+    def predict(self, query_key, memory_keys) -> Sequence[float]:
+        ...
+
+    @abstractmethod
+    def update(self, query_key, memory_keys, y):
+        ...
+
+class BaseMetric:
 
     def __init__(self, base="none", maxnorm=False):
 
-        assert base in ["none", "l1", "l2", "l2^2", "cos"]
+        assert base in ["none", "l1", "l2", "l2^2", "cos", "exp"]
 
         self.base    = base
         self.maxnorm = maxnorm
@@ -62,10 +75,16 @@ class Base:
             if sp.issparse(ef1):
                 n1 = distance.euclidean(ef1.data,0)
                 n2 = distance.euclidean(ef2.data,0)
-
                 return (1-self._sparse_dp(ef1,ef2)/(n1*n2))/2
             else:
                 return distance.cosine(ef1, ef2) / 2
+
+        if self.base == "exp":
+            if sp.issparse(ef1):
+                data = (ef1-ef2).data
+                return 0 if len(data) == 0 else np.exp(-distance.euclidean(data,0))
+            else:
+                return 1-np.exp(-distance.euclidean(ef1,ef2))
 
     def _sparse_dp(self,x1,x2):
 
@@ -106,9 +125,9 @@ class Base:
     def __str__(self) -> str:
         return self.__repr__()
 
-class RegressionScorer:
+class RegressionScorer(Scorer):
 
-    def __init__(self, l2=0, power_t=0, baser:Base=Base(), exampler:MemExample=InteractionExample()):
+    def __init__(self, l2=0, power_t=0, baser:BaseMetric=BaseMetric(), exampler:Example=InteractionExample()):
 
         self.baser = baser
 
@@ -157,54 +176,54 @@ class RegressionScorer:
     def __str__(self) -> str:
         return self.__repr__()
 
-class RankScorer:
+class RankScorer(Scorer):
 
-    def __init__(self, l2=0, power_t=0, baser:Base=Base(), exampler:MemExample=DifferenceExample()):
+    def __init__(self, l2=0, power_t=0, base:BaseMetric=BaseMetric(), example:Example=DiffExample()):
 
-        self.baser = baser
+        self.base = base
 
-        vw_ignore_linear = " ".join([ f"--ignore_linear {i}" for i in exampler.ignored() ])
-        vw_interactions  = " ".join([ f"--interactions {i}"  for i in exampler.interactions() ])
+        vw_ignore_linear = " ".join([ f"--ignore_linear {i}" for i in example.ignored() ])
+        vw_interactions  = " ".join([ f"--interactions {i}"  for i in example.interactions() ])
 
         self.vw = pyvw.vw(f'--quiet -b {bits} --l2 {l2} --power_t {power_t} --noconstant --loss_function logistic --link=glf1 {vw_ignore_linear} {vw_interactions}')
 
         self.t        = 0
         self.l2       = l2
         self.power_t  = power_t
-        self.exampler = exampler
+        self.example = example
 
         self.rng = CobaRandom(1)
 
-        self.args = (l2, power_t, baser, exampler)
+        self.args = (l2, power_t, base, example)
 
     def __reduce__(self):
         return (type(self), self.args)
 
-    def predict(self, xraw, zs):
+    def predict(self, query_key, memory_keys):
 
         values = []
 
-        for z in zs:
-            base    = -self.baser.calculate_base(xraw, z[0]) 
-            example = self.exampler.make_example(self.vw, xraw, z[0], base)
+        for z in memory_keys:
+            base    = 1-2*self.base.calculate_base(query_key, z)
+            example = self.example.make_example(self.vw, query_key, z, base)
             values.append(self.vw.predict(example))
             self.vw.finish_example(example)
 
         return values
 
-    def update(self, xraw, zs, r):
+    def update(self, query_key, memory_keys, r):
 
         self.t += 1
 
-        if len(zs) >= 1:
-            base    = -self.baser.calculate_base(xraw, zs[0][0]) 
-            example = self.exampler.make_example(self.vw, xraw, zs[0][0], base, 1, r)
+        if len(memory_keys) >= 1:
+            base    = 1-2*self.base.calculate_base(query_key, memory_keys[0])
+            example = self.example.make_example(self.vw, query_key, memory_keys[0], base, 1, r) #0
             self.vw.learn(example)
             self.vw.finish_example(example)
 
-        if len(zs) >= 2:
-            base    = -self.baser.calculate_base(xraw, zs[1][0]) 
-            example = self.exampler.make_example(self.vw, xraw, zs[1][0], base, -1, r)
+        if len(memory_keys) >= 2:
+            base    = 1-2*self.base.calculate_base(query_key, memory_keys[1]) 
+            example = self.example.make_example(self.vw, query_key, memory_keys[1], base, -1, r) #1
             self.vw.learn(example)
             self.vw.finish_example(example)
 
@@ -214,7 +233,7 @@ class RankScorer:
     def __str__(self) -> str:
         return self.__repr__()
 
-class UCBScorer:
+class UCBScorer(Scorer):
     def __init__(self):
         self._ucb_learner = UcbBanditLearner()
 
@@ -236,3 +255,20 @@ class UCBScorer:
 
     def update(self, xraw, zs, r):
         self._ucb_learner.learn(None, zs[0][0], r, 1, None)
+
+class RandomScorer(Scorer):
+
+    def __init__(self):
+        self.rng = CobaRandom(1)
+
+    def predict(self, xraw, zs):
+        return self.rng.randoms(len(zs))
+
+    def update(self, xraw, zs, r):
+        pass
+
+    def __repr__(self) -> str:
+        return f"rand"
+
+    def __str__(self) -> str:
+        return self.__repr__()

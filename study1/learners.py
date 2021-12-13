@@ -1,149 +1,66 @@
 import time
-import random
 import math
-import copy
+import statistics
 
-from typing import Hashable, Sequence, Dict, Any, Tuple
+from typing_extensions import Literal
+from typing import Hashable, Sequence, Dict, Any
 
 import numpy as np
-
 from sklearn.feature_extraction import FeatureHasher
-
-from coba.encodings import InteractionTermsEncoder
-from coba.learners import Learner, CorralLearner
+from coba.encodings import InteractionsEncoder
 
 from memory import CMT
-from scorers import RankScorer
-from feedbacks import DeviationFeedback
 
 logn = 500
 bits = 20
 
-class CMT_Implemented:
+class MemoryKey:
+    time = 0
+    def __init__(self, context, action, interactions) -> None:
 
-    class MemoryKey:
-        time = 0
-        def __init__(self, context, action, interactions) -> None:
+        features = self._featurize(context, action, interactions)
 
-            features = self._featurize(context, action, interactions)
-
-            if isinstance(features[0],tuple):
-                self._features = FeatureHasher(n_features=2**bits, input_type='pair').fit_transform([features])
-                self._features.sort_indices()
-            else:
-                self._features = np.array([features])
-
-            self._hash = hash((context,action))
-
-            self.context = context
-            self.action  = action 
-
-        def features(self):
-            return self._features
-
-        def _featurize(self, context, action, interactions):
-            
-            return InteractionTermsEncoder(interactions).encode(x=context,a=action)
-
-        def __hash__(self) -> int:
-            return self._hash
-
-    def __init__(self, max_memories: int = 1000, router:str = 'sk', scorer=RankScorer(), feedback=DeviationFeedback(), c=10, d=1, megalr=0.1, interactions=["x","a","xa","xxa"], g: float = 0, sort:bool = False, alpha:float=0.25) -> None:
-
-        assert 1 <= max_memories
-
-        self._max_memories = max_memories
-        self._router       = router
-        self._c            = c
-        self._d            = d
-        self._megalr       = megalr
-        self._interactions = interactions
-        self._gate         = g
-        self._sort         = sort
-        self._alpha        = alpha
-
-        router_factory = router
-
-        self._scorer = copy.deepcopy(scorer)
-        self._signal = feedback
-
-        random_state   = random.Random(1337)
-        ords           = random.Random(2112)
-
-        self.mem = CMT(router_factory, self._scorer, alpha=self._alpha, c=self._c, d=self._d, randomState=random_state, optimizedDeleteRandomState=ords, maxMemories=self._max_memories)
-
-    @property
-    def params(self):
-        return { 'm': self._max_memories, 'd': self._d, 'c': self._c, 'ml': self._megalr, "X": self._interactions, "a": self._alpha, "fb": str(self._signal), "scr": str(self._scorer), "rou": str(self._router) }
-
-    def query(self, context: Hashable, actions: Sequence[Hashable], default = None, topk:int=1):
-
-        memories = []
-
-        for action in actions:
-            trigger = self._mem_key(context, action)
-            (_, z) = self.mem.query(trigger, topk, 0)
-            memories.extend([ zz[1] for zz in z ] or [default])
-
-        return memories
-
-    def update(self, context, action, observation, reward):
-
-        trigger = self._mem_key(context, action)
-        
-        (u,z) = self.mem.query(trigger, k=2, epsilon=1) #we pick best with prob 1-epsilon
-
-        if self._sort:
-            z = sorted(z, key=lambda zz: abs(observation-zz[1]))
-
-        # current ranking loss:
-        # 1. using the top 2 results from the current scorer, order them "better"
-        # alternative ranking loss:
-        # 1. find the best result in the leaf (using the "extra" learn-only information)
-        # 2. induce a ranking loss wrt the top result from the scorer
-        # 3. special case: if top scorer result == best result in leaf, use second scorer result 
-        #    note we esesntially are always doing the special case right now
-
-        if len(z) > 0:
-
-            if self._megalr > 0:
-                z[0] = (z[0][0], z[0][1]+self._megalr*(observation-z[0][1]))
-                self.mem.updateomega(z[0][0], z[0][1])
-
-            signal = self._signal.signal(observation, z[0][1], reward)
-            self.mem.update(u, trigger, z, signal)
+        if isinstance(features[0],tuple):
+            self._features = FeatureHasher(n_features=2**bits, input_type='pair').fit_transform([features])
+            self._features.sort_indices()
         else:
-            signal = 0
+            self._features = np.array([features])
 
-        no_memory  = len(z) == 0
-        not_maxed  = len(self.mem.leafbykey) < self.mem.maxMemories
-        diff_mem   = len(z) > 0 and abs(observation-z[0][1]) >= self._gate
-        is_new_trg = trigger not in self.mem.leafbykey
+        self._hash = hash((context,action))
 
-        if is_new_trg and not (no_memory or not_maxed or diff_mem):
-            pass
-            #print("!")
+        self.context = context
+        self.action  = action 
 
-        if is_new_trg and (no_memory or not_maxed or diff_mem):
-            self.mem.insert(trigger, observation)
+    def features(self):
+        return self._features
 
-    def _mem_key(self, context, action):
-        return CMT_Implemented.MemoryKey(context,action,self._interactions)
+    def _featurize(self, context, action, interactions):
+        return InteractionsEncoder(interactions).encode(x=context,a=action)
 
-class MemorizedLearner:
+    def __hash__(self) -> int:
+        return self._hash
 
-    def __init__(self, epsilon: float, mem: CMT_Implemented) -> None:
+    def __eq__(self, __o: object) -> bool:
+        return isinstance(__o, MemoryKey) and self.context == __o.context and self.action == __o.action
+
+class OmegaDiffLearner:
+
+    def __init__(self, epsilon: float, signal: Literal["abs","^2"], cmt: CMT, X = ["x","a","xa","xxa"], megalr:float = 0.1, sort: bool = False) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
         
         self._epsilon = epsilon
         self._i       = 0
-        self._mem     = mem
+        self._cmt     = cmt
         self._times   = [0, 0]
+        self._signal  = signal
+        self._X       = X
+        self._megalr  = megalr
+        self._sort    = sort
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'CMT_Memorized', 'e':self._epsilon, **self._mem.params }
+        return { 'family': 'omega_diff', 'e':self._epsilon, **self._cmt.params, "sig": self._signal, "X": self._X, 'ml': self._megalr, 'srt':self._sort }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -156,201 +73,97 @@ class MemorizedLearner:
 
         predict_start = time.time()
 
-        greedy_as = []
+        omegas = []
+        depths = []
+        counts = []
+
+        for action in actions:
+            trigger = MemoryKey(context, action, self._X)
+            (_, Z, l) = self._cmt.query(trigger, 1, 0)
+
+            omegas.extend([z[1] for z in Z] or [-math.inf])
+            depths.append(l.depth)
+            counts.append(len(l.memories))
+
         greedy_r = -math.inf
+        greedy_A = []
 
-        for action, remembered_value in zip(actions, self._mem.query(context, actions, default=-math.inf)):
-            if remembered_value == greedy_r:
-                greedy_as.append(action)
-            if remembered_value > greedy_r: 
-                greedy_r = remembered_value
-                greedy_as = [action]
+        for action, mem_value in zip(actions, omegas):
+            if mem_value == greedy_r:
+                greedy_A.append(action)
+            if mem_value > greedy_r:
+                greedy_r = mem_value
+                greedy_A = [action]
 
         minp = self._epsilon / len(actions)
-        grdp = (1-self._epsilon)/len(greedy_as)
+        grdp = (1-self._epsilon)/len(greedy_A)
 
         self._times[0] += time.time()-predict_start
 
-        return [ grdp+minp if a in greedy_as else minp for a in actions ]
+        info = {'action_leaf_depths':depths, 'action_leaf_sizes': counts, 'action_memories': omegas }
+        return [ grdp+minp if a in greedy_A else minp for a in actions ], (info, actions)
 
-    def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, info: Any) -> None:
+    def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, predict_info: Any) -> None:
         """Learn about the result of an action that was taken in a context."""
 
+        action_info, actions = predict_info 
+        action_info["action_index"] = actions.index(action)
+
         learn_start = time.time()
-        self._mem.update(context, action, reward, reward)
-        self._times[1] += time.time()-learn_start
 
-class ResidualLearner:
+        key = MemoryKey(context, action, self._X)
 
-    class ResidualSignal:
-        def __init__(self,signal):
-            self._signal = signal
+        if self._megalr > 0:
+            (u,Z,l) = self._cmt.query(key, k=1, epsilon=0) #we pick best with prob 1-epsilon
+            if len(Z) > 0:
+                self._cmt.update_omega(Z[0][0], Z[0][1]+self._megalr*(reward-Z[0][1]))
 
-        def signal(self, observed, memory, reward):
-            return self._signal.signal(observed/2, memory/2, reward)
 
-    def __init__(self, epsilon: float, mem: CMT_Implemented):
+        (u,Z,l) = self._cmt.query(key, k=2, epsilon=1) #we pick best with prob 1-epsilon
 
-        assert 0 <= epsilon and epsilon <= 1
+        if self._sort:
+            Z = sorted(Z, key=lambda z: abs(reward-z[1]))
 
-        from vowpalwabbit import pyvw
+        # current ranking loss:
+        # 1. using the top 2 results from the current scorer, order them "better"
+        # alternative ranking loss:
+        # 1. find the best result in the leaf (using the "extra" learn-only information)
+        # 2. induce a ranking loss wrt the top result from the scorer
+        # 3. special case: if top scorer result == best result in leaf, use second scorer result 
+        #    note we esesntially are always doing the special case right now
 
-        self._args = (epsilon, mem)
-        self._epsilon = epsilon
-
-        self._mem = mem 
-        self._vw  = pyvw.vw(f'--quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s')
-
-        self._mem._signal = ResidualLearner.ResidualSignal(self._mem._signal)
-
-        self._i        = 0
-        self._times    = [0,0]
-
-    @property
-    def params(self) -> Dict[str,Any]:
-        return  { 'family':'CMT_Residual', 'e':self._epsilon,  **self._mem.params }
-
-    def toadf(self, context, actions, label=None):
-
-        if len(context) == 2 and isinstance(context[0], tuple) and isinstance(context[1], tuple):
-            context = list(zip(*context))
+        if len(Z) > 0:
+            error = reward-Z[0][1]
+            error = abs(error) if self._signal == "abs" else (error)**2
+            self._cmt.update(u, key, Z, 1-error)
+        
+        if key not in self._cmt.leaf_by_mem_key:
+            v = self._cmt.insert(key, reward)
         else:
-            context = list(enumerate(context))
+            v = None
 
-        return '\n'.join([
-            'shared |s ' + ' '.join([ f'{k+1}:{v}' for k, v in context ]),
-        ] + [
-            f'{dacost} |a ' + ' '.join([ f'{k+1}:{v}' for k, v in enumerate(a) if v != 0 ])
-            for n, a in enumerate(actions)
-            for dacost in ((f'0:{label[1]}:{label[2]}' if label is not None and n == label[0] else ''),)
-        ])
-
-    def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Tuple[Sequence[float], Any]:
-        """Choose which action index to take."""
-
-        predict_start = time.time()
-        self._i += 1
-
-        if logn and self._i % logn == 0:
-           print(f"RES {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"RES {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
-
-        predicted_losses = self._vw.predict(self.toadf(context, actions))
-        rememberd_deltas = self._mem.query(context, actions, 0)
-
-        greedy_as = []
-        greedy_l = math.inf
-
-        for action, remembered_value in zip(actions, map(sum,zip(predicted_losses, rememberd_deltas))):
-            if remembered_value == greedy_l:
-                greedy_as.append(action)
-            if remembered_value < greedy_l: 
-                greedy_l  = remembered_value
-                greedy_as = [action]
-
-        minp = self._epsilon / len(actions)
-        grdp = (1-self._epsilon)/len(greedy_as)
-
-        self._times[0] += time.time()-predict_start
-
-        prediction = [ grdp+minp if a in greedy_as else minp for a in actions ]
-        info       = (predicted_losses, actions)
-
-        return (prediction,info)
-
-    def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, info: Any) -> None:
-        """Learn about the result of an action that was taken in a context."""
-
-        learn_start = time.time()
-
-        predicted_losses = info[0]
-        actions          = info[1]
-
-        act_ind  = actions.index(action)
-        prd_loss = predicted_losses[act_ind]
-
-        obs_loss  = 1-reward
-        obs_resid = obs_loss-prd_loss
-
-        self._vw.learn(self.toadf(context, actions, (act_ind, obs_loss, probability)))
-        self._mem.update(context, action, obs_resid, reward)
+        update_info = {
+            'update_mem_leaf_size'  : len(l.memories),
+            'update_mem_leaf_depth' : l.depth,
+            'insert_mem_leaf_size'  : len(v.memories)-1 if v else None,
+            'insert_mem_leaf_depth' : v.depth if v else None
+        }
 
         self._times[1] += time.time()-learn_start
 
-    def __reduce__(self):
-        return (ResidualLearner,self._args)
+        depths  = [ n.depth                                                                 for n in self._cmt.nodes if n.is_leaf ]
+        cnts    = [ len(n.memories)                                                         for n in self._cmt.nodes if n.is_leaf ]
+        avgs    = [ 0 if len(n.memories) == 0 else statistics.mean(n.memories.values())     for n in self._cmt.nodes if n.is_leaf ]
+        vars    = [ 0 if len(n.memories) <= 1 else statistics.variance(n.memories.values()) for n in self._cmt.nodes if n.is_leaf ]
 
-class MemCorralLearner(CorralLearner):
-    """This is a modified implementation of the Agarwal et al. (2017) Corral algorithm.
+        tree_info = {"leaf_depths": depths, "leaf_mem_cnt": cnts, "leaf_mem_avg": avgs, "leaf_mem_var": vars }
 
-    This algorithm assumes that the reward distribution has support in [0,1] and that all learners can learn off-policy.
+        return {**action_info, **update_info, **tree_info}
 
-    References:
-        Agarwal, Alekh, Haipeng Luo, Behnam Neyshabur, and Robert E. Schapire. 
-        "Corralling a band of bandit algorithms." In Conference on Learning 
-        Theory, pp. 12-38. PMLR, 2017.
-    """
 
-    id = 0
-
-    def __init__(self, base_learners: Sequence[Learner], eta : float, T: float = math.inf, type: str = "off-policy", seed: int = 1) -> None:
-        """Instantiate a CorralLearner.
-
-        Args:
-            base_learners: The collection of algorithms to use as base learners.
-            eta: The learning rate. In our experiments a value between 0.05 and .10 often seemed best.
-            T: The number of interactions expected during the learning process. In our experiments the 
-                algorithm performance seemed relatively insensitive to this value.
-            seed: A seed for a random number generation in ordre to get repeatable results.
-
-        Remark:
-            If the given base learners don't require feedback for every selected action then it is possible to
-            modify this algorithm so as to use rejection sampling while being as efficient as importance sampling.
-        """
-
-        self._full_expected_rwd = [0]*len(base_learners)
-        self._i = 0
-        self._id = MemCorralLearner.id
-        MemCorralLearner.id += 1
-
-        super().__init__(base_learners, eta=eta, T=T, seed=seed, type=type)
-
-    def predict(self, context, actions) -> Tuple[Sequence[float], Any]:
-
-        self._i += 1
-
-        return super().predict(context, actions)
-
-    def learn(self, context, action, reward, probability, info) -> Dict[str,Any]:
-
-        base_preds = info[3]
-        actions    = info[4]
-
-        picked_index = actions.index(action)
-        instant_rwd  = [ reward * base_pred[picked_index]/probability for base_pred in base_preds ]
-
-        for i,r in enumerate(instant_rwd):
-            self._full_expected_rwd[i] = (1-1/self._i) * self._full_expected_rwd[i] + (1/self._i) * r  
-
-        # if self._i % int(logn/5) == 0:
-        #     print(self._id)
-        #     print(self._p_bars)
-        #     print(self._full_expected_rwd)
-        #     print("")
-
-        return super().learn(context, action, reward, probability, info)
-
-    @property
-    def params(self) -> Dict[str, Any]:
-        """The parameters of the learner.
-
-        See the base class for more information
-        """
-
-        def base_name(i):
-            if i == 0:
-                return self._base_learners[i].params["family"]
-            else:
-                return self._base_learners[i].full_name
-            
-        return { 'family':'corral', "type":self._type, "B": [ base_name(i) for i in range(len(self._base_learners)) ] }
+# We used to have a ResidualLearner too. The idea was that we'd learn a VW regressor 
+# to predict context/action values and then use the memory tree to learn the residual 
+# of the VW regressor predictions. 
+# Our VW regressor was --quiet -b {bits} --cb_adf -q sa --cubic ssa --ignore_linear s
+# I removed the learner because it was way way out of date and didn't seem to do well
+# on a larger set of environments.

@@ -4,7 +4,7 @@ from itertools import count
 from vowpalwabbit import pyvw
 import scipy.sparse as sp
 
-class MemExample:
+class Example:
     
     @abstractmethod
     def interactions(self):
@@ -18,7 +18,7 @@ class MemExample:
     def make_example(self, vw, query, memory, base=0, label=0, weight=1):
         pass
 
-class IdentityExample(MemExample):
+class IdentityExample(Example):
 
     def __init__(self, offset=0):
         self._offset = offset
@@ -52,7 +52,7 @@ class IdentityExample(MemExample):
     def __str__(self) -> str:
         return "identity"
 
-class InteractionExample(MemExample):
+class InteractionExample(Example):
 
     def __init__(self, interactions=["ac","ad","bc","bd","abcd"], ignored=["a","b","c","d"]):
         self._interactions = interactions
@@ -99,7 +99,7 @@ class InteractionExample(MemExample):
     def __str__(self) -> str:
         return self.__repr__()
 
-class DifferenceExample(MemExample):
+class DiffExample(Example):
 
     def __init__(self, element_wise_op:str="^2") -> None:
 
@@ -154,7 +154,7 @@ class DifferenceExample(MemExample):
     def __str__(self) -> str:
         return self.__repr__()
 
-class OG_DifferenceExample(MemExample):
+class OG_DifferenceExample(Example):
 
     def __init__(self, element_wise_op:str="^2") -> None:
 

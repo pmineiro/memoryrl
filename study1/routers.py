@@ -1,11 +1,30 @@
+from abc import ABC, abstractmethod
+
+from coba.random import CobaRandom
 from vowpalwabbit import pyvw
 from examples import IdentityExample
 
 bits = 20
 
-class Logistic_VW:
+class Router(ABC):
 
-    class Logistic_VW_Router:
+    @abstractmethod
+    def predict(self, x) -> int:
+        ...
+    
+    @abstractmethod
+    def update(self, x, y, weight):
+        ...
+
+class RouterFactory(ABC):
+
+    @abstractmethod
+    def __call__(self) -> Router:
+        ...
+
+class Logistic_VW(RouterFactory):
+
+    class Logistic_VW_Router(Router):
 
         def __init__(self, vw, index):
             self.vw = vw
@@ -17,10 +36,7 @@ class Logistic_VW:
         def update(self, xraw, y, w):
             self.vw.learn(self.exampler.make_example(self.vw, xraw.features(), 0, y, w))
 
-        def __reduce__(self):
-            return (Logistic_VW,())
-
-    def __init__(self, power_t:float) -> None:
+    def __init__(self, power_t:float=0) -> None:
         # We add 10 to bits which means we can represent
         # 2**10 internal nodes for each vw instance that we create
         # VW expects a 32 bit unsinged integer so our hash value plus the offset must be < 2**32
@@ -49,9 +65,9 @@ class Logistic_VW:
     def __reduce__(self):
         return (type(self),(self._power_t,))
 
-class Logistic_SK:
+class Logistic_SK(RouterFactory):
 
-    class Logistic_SK_Router:
+    class Logistic_SK_Router(Router):
         def __init__(self):
 
             from sklearn.linear_model import SGDClassifier
@@ -74,5 +90,25 @@ class Logistic_SK:
     def __repr__(self) -> str:
         return f"sk"
     
+    def __str__(self) -> str:
+        return self.__repr__()
+
+class RandomRouter(RouterFactory,Router):
+
+    def __init__(self) -> None:
+        self._rng = CobaRandom(1)
+
+    def __call__(self) -> 'RandomRouter':
+        return self
+
+    def predict(self, xraw):
+        return 1-2*self._rng.random()
+
+    def update(self, xraw, y, w):
+        pass
+
+    def __repr__(self) -> str:
+        return f"rand"
+
     def __str__(self) -> str:
         return self.__repr__()

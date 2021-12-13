@@ -5,42 +5,52 @@ os.environ['OPENBLAS_NUM_THREADS'] = '1'
 os.environ['GOTO_NUM_THREADS'    ] = '1'
 os.environ['OMP_NUM_THREADS'     ] = '1'
 
-from itertools import product
+from memory import CMT
+from learners import OmegaDiffLearner
+from routers import Logistic_VW, RandomRouter
+from scorers import RankScorer, BaseMetric, RandomScorer
+from tasks import RewardLoggingEvaluationTask
+from examples import DiffExample
+from simulations import MemorizableSimulation
 
-from feedbacks import DeviationFeedback, RewardFeedback
-from learners import MemorizedLearner, MemCorralLearner, CMT_Implemented
-from routers import Logistic_VW, Logistic_SK
-from scorers import RankScorer, RegressionScorer, UCBScorer, Base
-from examples import InteractionExample, DifferenceExample
-
-from coba.benchmarks import Benchmark, Result
-from coba.learners import VowpalLearner
+from coba.environments import Environments
+from coba.experiments import Experiment, ClassEnvironmentTask, SimpleEnvironmentTask, OnPolicyEvaluationTask
+from coba.learners import VowpalLearner, CorralLearner, EpsilonBanditLearner
 
 experiment = 'full6'
-processes  = 1
-chunk_by   = 'source'
+json       = f"./study1/experiments/{experiment}.json"
+log        = None#f"./study1/outcomes/{experiment}_6.log.gz"
+config     = {"processes":8, "chunk_by":'source' }
 
-max_memories = 3000
+max_memories = 6000
 epsilon      = 0.1
 d            = 4
-c            = 120
+c            = 40
 megalr       = 0.1
 
-json = f"./study1/experiments/{experiment}.json"
-log  = f"./study1/outcomes/{experiment}_3.log.gz"
-
-scorer   = RankScorer(baser=Base("cos") , exampler=DifferenceExample("abs"))
+scorer   = RankScorer(base=BaseMetric("exp"), example=DiffExample("abs"), power_t=0)
 router   = Logistic_VW(power_t=0.0)
-feedback = DeviationFeedback("^2")
 
-learners = [
-   MemorizedLearner(epsilon, CMT_Implemented(max_memories, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=megalr)),
-   VowpalLearner(f"--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon {epsilon} --random_seed 1 --power_t 0.0"),
-   MemCorralLearner([
-      VowpalLearner(f"--cb_explore_adf --interactions ssa --interactions sa --ignore_linear s --epsilon {epsilon} --random_seed 1 --power_t 0.0"), 
-      MemorizedLearner(epsilon, CMT_Implemented(max_memories, scorer=scorer, router=router, feedback=feedback, c=c, d=d, megalr=megalr))
-   ], eta=.075, T=10000, type="off-policy")
-]
+memorized_learner = OmegaDiffLearner(epsilon, '^2', CMT(max_memories, router, scorer, c, d), megalr=0.1)
+vowpal_learner    = VowpalLearner(epsilon=epsilon, power_t=0)
+corral_learner    = CorralLearner([vowpal_learner, memorized_learner], eta=.075, T=10000, type="off-policy")
 
 if __name__ == '__main__':
-   Benchmark.from_file(json).processes(processes).chunk_by(chunk_by).evaluate(learners, log).filter_fin().plot_learners()
+   learners = [
+      memorized_learner,
+      vowpal_learner
+   ]
+
+   base_env = []
+
+   environments = [
+      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=2,n_context=20),
+      #MemorizableSimulation(n_interactions=1500,n_features=2,n_actions=4,n_context=10),
+      #MemorizableSimulation(n_interactions=1500,n_features=2,n_actions=8,n_context=10)
+   ]
+   
+   #environments = Environments.from_file(json)
+
+   #shuffle_env = Environments(environments)
+   Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=RewardLoggingEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners(xlim=(0,4000), each=True)
+   #Experiment(environments, learners, environment_task=SimpleEnvironmentTask(), evaluation_task=OnPolicyEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()

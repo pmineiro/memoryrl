@@ -1,17 +1,17 @@
 import math
-from typing import Tuple, Iterable
+
+from collections import defaultdict
 from numbers import Number
+from typing import Tuple, Iterable
 
 import numpy as np
-from scipy.spatial.distance import cdist
 
-from coba.pipes import Filter
-from coba.simulations import LambdaSimulation, Interaction, SimulationFilter
+from coba.environments import LambdaSimulation, Interaction, EnvironmentFilter, SimulatedEnvironment
 from coba.registry import coba_registry_class
 from coba.random import CobaRandom
 
 @coba_registry_class("features_scaled_to_zero_one")
-class EuclidNormed(SimulationFilter):
+class EuclidNormed(EnvironmentFilter):
 
     @property
     def params(self):
@@ -48,8 +48,8 @@ class EuclidNormed(SimulationFilter):
                 yield Interaction(new_context, interaction.actions, reveals=interaction.reveals, **interaction.results)
 
 @coba_registry_class("bernoulli_flip")
-class BernoulliLabelNoise(SimulationFilter):
-    
+class BernoulliLabelNoise(EnvironmentFilter):
+
     def __init__(self, prob=0) -> None:
         self._prob = prob
         self._rng = CobaRandom(1)
@@ -71,32 +71,45 @@ class BernoulliLabelNoise(SimulationFilter):
 
             yield Interaction(interaction.context, interaction.actions, reveals=noised_labels, reward=interaction.reveals, **interaction.results)
 
-class MemorizableSimulation(LambdaSimulation):
+class MemorizableSimulation(SimulatedEnvironment):
 
-    def __init__(self, n_interactions:int = 1000, n_features:int = 100, n_anchors=1000, n_actions:int = 10, density:int=1, seed:int = 1) -> None:
+    def __init__(self,
+        n_interactions:int = 1000,
+        n_features:int = 2,
+        n_context=3,
+        n_actions:int = 10,
+        seed:int = 1) -> None:
 
-        np.random.seed([seed])
-        anchors       = np.random.rand(n_anchors,n_features) * density
-        anchor_values = np.zeros((n_anchors,n_actions))
-        anchor_values[np.arange(n_anchors),np.random.randint(0,n_actions,n_anchors)] = 1
+        self._n_interactions = n_interactions
+        self._n_features     = n_features
+        self._n_contexts      = n_context
+        self._n_actions      = n_actions
+        self._seed           = seed
 
-        contexts       = np.random.rand(n_interactions, n_features)*density
-        distances      = cdist(contexts,anchors)
-        anchor_indexes = np.argmin(distances,axis=1)
+    @property
+    def params(self):
+        return {"n_int": self._n_interactions, "n_feat": self._n_features, "n_ctx": self._n_contexts, "n_act": self._n_actions }
 
-        contexts = [tuple(c) for c in contexts]
-        actions  = [tuple(l) for l in np.eye(n_actions)]
+    def read(self) -> Iterable[Interaction]:
+
+        rng = CobaRandom(self._seed)
+
+        contexts = [tuple(rng.randoms(self._n_features)) for _ in range(self._n_contexts) ]
+        actions  = [ tuple(l) for l in np.eye(self._n_actions).astype(int)]
+        rewards  = defaultdict(int)
+
+        for context in contexts: rewards[(context,rng.choice(actions))] = 1
 
         def context_generator(index:int):
-            return contexts[index]
-        
+            return rng.choice(contexts)
+
         def action_generator(index:int, context:Tuple[float,...]):
             return actions
 
         def reward_function(index:int, context:Tuple[float,...], action: Tuple[int,...]):
-            return anchor_values[anchor_indexes[index], action.index(1)]
+            return rewards[(context,action)]
 
-        super().__init__(n_interactions, context_generator, action_generator, reward_function)
-    
+        return LambdaSimulation(self._n_interactions, context_generator, action_generator, reward_function).read()
+
     def __repr__(self):
-        return "memorizable"
+        return f"Memorizable{self.params}".replace("{","(").replace("}",")")
