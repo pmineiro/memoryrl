@@ -168,7 +168,7 @@ class CMT:
 
         (v, a, p) = u
 
-        if v.is_leaf:
+        if p is None:
             self.f.update(x, [z[0] for z in Z], r)
 
             if len(Z) > 0:

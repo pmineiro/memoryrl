@@ -125,16 +125,16 @@ class BaseMetric:
     def __str__(self) -> str:
         return self.__repr__()
 
-class RegressionScorer(Scorer):
+class RegrScorer(Scorer):
 
-    def __init__(self, l2=0, power_t=0, baser:BaseMetric=BaseMetric(), exampler:Example=InteractionExample()):
+    def __init__(self, l2=0, power_t=0, base:BaseMetric=BaseMetric(), example:Example=InteractionExample()):
 
-        self.baser = baser
+        self.base = base
 
-        vw_ignore_linear = " ".join([ f"--ignore_linear {i}" for i in exampler.ignored() ])
-        vw_interactions  = " ".join([ f"--interactions {i}" for i in exampler.interactions() ])
+        vw_ignore_linear = " ".join([ f"--ignore_linear {i}" for i in example.ignored() ])
+        vw_interactions  = " ".join([ f"--interactions {i}" for i in example.interactions() ])
 
-        self.exampler = exampler
+        self.exampler = example
 
         self.vw = pyvw.vw(f'--quiet -b {bits} --l2 {l2} --power_t {power_t} --min_prediction -1 --max_prediction 2 {vw_ignore_linear} {vw_interactions}')
 
@@ -144,29 +144,29 @@ class RegressionScorer(Scorer):
 
         self.rng = CobaRandom(1)
 
-        self.args = (l2, power_t, baser, exampler)
+        self.args = (l2, power_t, base, example)
 
     def __reduce__(self):
         return (type(self), self.args)
 
-    def predict(self, xraw, zs):
+    def predict(self, query_key, memory_keys):
 
         values = []
 
-        for z in zs:
+        for memory_key in memory_keys:
 
-            base    = 1-self.baser.calculate_base(xraw, z[0])
-            example = self.exampler.make_example(self.vw, xraw, z[0], base)
+            base    = 1-2*self.base.calculate_base(query_key, memory_key)
+            example = self.exampler.make_example(self.vw, query_key, memory_key, base)
             values.append(self.vw.predict(example))
             self.vw.finish_example(example)
 
         return values
 
-    def update(self, xraw, zs, r):
+    def update(self, query_key, memory_keys, r):
 
         self.t += 1
-        base    = 1-self.baser.calculate_base(xraw, zs[0][0])
-        example = self.exampler.make_example(self.vw, xraw, zs[0][0], base, r)
+        base    = 1-2*self.base.calculate_base(query_key, memory_keys[0])
+        example = self.exampler.make_example(self.vw, query_key, memory_keys[0], base, r)
         self.vw.learn(example)
         self.vw.finish_example(example)
 

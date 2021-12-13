@@ -1,6 +1,7 @@
 import time
 import math
 import statistics
+import random
 
 from typing_extensions import Literal
 from typing import Hashable, Sequence, Dict, Any
@@ -45,7 +46,7 @@ class MemoryKey:
 
 class OmegaDiffLearner:
 
-    def __init__(self, epsilon: float, signal: Literal["abs","^2"], cmt: CMT, X = ["x","a","xa","xxa"], megalr:float = 0.1, sort: bool = False) -> None:
+    def __init__(self, epsilon: float, cmt: CMT, X = ["x","a","xa","xxa"], signal: Literal["abs","^2"] = "^2", megalr:float = 0.1, sort: bool = False) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
         
@@ -60,7 +61,7 @@ class OmegaDiffLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'omega_diff', 'e':self._epsilon, **self._cmt.params, "sig": self._signal, "X": self._X, 'ml': self._megalr, 'srt':self._sort }
+        return { 'family': 'omega_diff', 'e':self._epsilon, **self._cmt.params, "X": self._X, 'ml': self._megalr, "sig": self._signal, 'srt':self._sort }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -81,7 +82,7 @@ class OmegaDiffLearner:
             trigger = MemoryKey(context, action, self._X)
             (_, Z, l) = self._cmt.query(trigger, 1, 0)
 
-            omegas.extend([z[1] for z in Z] or [-math.inf])
+            omegas.append(Z[0][1] if Z else -math.inf)
             depths.append(l.depth)
             counts.append(len(l.memories))
 
@@ -117,7 +118,6 @@ class OmegaDiffLearner:
             (u,Z,l) = self._cmt.query(key, k=1, epsilon=0) #we pick best with prob 1-epsilon
             if len(Z) > 0:
                 self._cmt.update_omega(Z[0][0], Z[0][1]+self._megalr*(reward-Z[0][1]))
-
 
         (u,Z,l) = self._cmt.query(key, k=2, epsilon=1) #we pick best with prob 1-epsilon
 
@@ -160,6 +160,107 @@ class OmegaDiffLearner:
 
         return {**action_info, **update_info, **tree_info}
 
+class RewarDirectLearner:
+
+    def __init__(self, epsilon: float, cmt: CMT, X = ["x","a","xa","xxa"], explore:Literal["each","every"]="each", megalr:float = 0.1,) -> None:
+
+        assert 0 <= epsilon and epsilon <= 1
+        
+        self._epsilon = epsilon
+        self._i       = 0
+        self._cmt     = cmt
+        self._times   = [0, 0]
+        self._X       = X
+        self._explore = explore
+        self._rng     = random.Random(0xbeef)
+        self._megalr  = megalr
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return { 'family': 'reward_dir', 'e':self._epsilon, **self._cmt.params, "X": self._X, 'ml': self._megalr,"exp": self._explore}
+
+    def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
+        """Choose which action index to take."""
+
+        self._i += 1
+
+        if logn and self._i % logn == 0:
+           print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+           print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+
+        predict_start = time.time()
+        
+        if self._explore == "each":
+            # we greed EACH action with prob 1-per_action_epsilon
+            # this gives 1-self._epsilon chance of greeding all actions and
+            # and self._epsilon chance of exploring on at least one action
+            per_action_epsilon = 1-(1-self._epsilon)**(1/len(actions))
+        else:
+            # we greed EVERY action with prob 1-self._epsilon 
+            # and explore EVERY action with prob self._epsilon
+            per_action_epsilon = int(self._rng.uniform(0,1) <= self._epsilon)
+
+        omegas  = []
+        depths  = []
+        counts  = []
+        updates = []
+
+        for action in actions:
+            query_key = MemoryKey(context, action, self._X)
+            (u, Z, l) = self._cmt.query(query_key, 2, per_action_epsilon)
+            
+            updates.append([u, query_key, Z])
+            omegas .append(Z[0][1] if Z else -math.inf)
+            depths .append(l.depth)
+            counts .append(len(l.memories))
+
+        greedy_r = -math.inf
+        greedy_A = []
+
+        for action, mem_value in zip(actions, omegas):
+            if mem_value == greedy_r:
+                greedy_A.append(action)
+            if mem_value > greedy_r:
+                greedy_r = mem_value
+                greedy_A = [action]
+
+        self._times[0] += time.time()-predict_start
+
+        info = {'action_leaf_depths':depths, 'action_leaf_sizes': counts, 'action_memories': omegas }
+        return [ int(a in greedy_A)/len(greedy_A) for a in actions ], (info, actions, updates)
+
+    def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, predict_info: Any) -> None:
+        """Learn about the result of an action that was taken in a context."""
+
+        action_info, actions, updates = predict_info 
+        action_info["action_index"] = actions.index(action)
+
+        learn_start = time.time()
+
+        key = MemoryKey(context, action, self._X)
+
+        if self._megalr > 0:
+            (u,Z,l) = self._cmt.query(key, k=1, epsilon=0) #we pick best with prob 1-epsilon
+            if len(Z) > 0:
+                self._cmt.update_omega(Z[0][0], Z[0][1]+self._megalr*(reward-Z[0][1]))
+
+        for update in updates:
+            if len(update[2]) > 0:
+                self._cmt.update(*update, reward)
+
+        if key not in self._cmt.leaf_by_mem_key:
+            self._cmt.insert(key, reward)
+
+        self._times[1] += time.time()-learn_start
+
+        depths  = [ n.depth                                                                 for n in self._cmt.nodes if n.is_leaf ]
+        cnts    = [ len(n.memories)                                                         for n in self._cmt.nodes if n.is_leaf ]
+        avgs    = [ 0 if len(n.memories) == 0 else statistics.mean(n.memories.values())     for n in self._cmt.nodes if n.is_leaf ]
+        vars    = [ 0 if len(n.memories) <= 1 else statistics.variance(n.memories.values()) for n in self._cmt.nodes if n.is_leaf ]
+
+        tree_info = {"leaf_depths": depths, "leaf_mem_cnt": cnts, "leaf_mem_avg": avgs, "leaf_mem_var": vars }
+
+        return {**action_info, **tree_info}
 
 # We used to have a ResidualLearner too. The idea was that we'd learn a VW regressor 
 # to predict context/action values and then use the memory tree to learn the residual 
