@@ -36,7 +36,7 @@ regr_exp = RegrScorer(base=BaseMetric("exp"), example=DiffExample("abs"), power_
 router = Logistic_VW(power_t=0.0)
 
 omega_learner  = OmegaDiffLearner  (epsilon, CMT(max_memories, router, rank_cos, c, d),signal ='^2'  , megalr=megalr, sort=True)
-reward_learner = RewarDirectLearner(epsilon, CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr),
+reward_learner = RewarDirectLearner(epsilon, CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr)
 vowpal_learner = VowpalLearner(epsilon=epsilon, power_t=0)
 corral_learner = CorralLearner([vowpal_learner, omega_learner], eta=.075, T=10000, type="off-policy")
 
