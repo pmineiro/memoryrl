@@ -6,7 +6,7 @@ os.environ['GOTO_NUM_THREADS'    ] = '1'
 os.environ['OMP_NUM_THREADS'     ] = '1'
 
 from memory import CMT
-from learners import OmegaDiffLearner, RewarDirectLearner
+from learners import UpdateTakenLearner, UpdateEveryLearner
 from routers import Logistic_VW, RandomRouter
 from scorers import RankScorer, BaseMetric, RegrScorer
 from tasks import RewardLoggingEvaluationTask
@@ -19,7 +19,7 @@ from coba.learners import VowpalLearner, CorralLearner, EpsilonBanditLearner
 
 experiment = 'full6'
 json       = f"./study1/experiments/{experiment}.json"
-log        = f"./study1/outcomes/{experiment}_9.log.gz"
+log        = None#f"./study1/outcomes/{experiment}_9.log.gz"
 config     = {"processes":8, "chunk_by":'task' }
 
 max_memories = 6000
@@ -35,25 +35,26 @@ regr_exp = RegrScorer(base=BaseMetric("exp"), example=DiffExample("abs"), power_
 
 router = Logistic_VW(power_t=0.0)
 
-omega_learner  = OmegaDiffLearner  (epsilon, CMT(max_memories, router, rank_cos, c, d),signal ='^2'  , megalr=megalr, sort=True)
-reward_learner = RewarDirectLearner(epsilon, CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr)
+omega_learner  = UpdateTakenLearner (epsilon, 'd^2', CMT(max_memories, router, rank_cos, c, d), megalr=megalr, sort=True)
+reward_learner = UpdateEveryLearner(epsilon, 'd^2', CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr)
 vowpal_learner = VowpalLearner(epsilon=epsilon, power_t=0)
 corral_learner = CorralLearner([vowpal_learner, omega_learner], eta=.075, T=10000, type="off-policy")
 
 if __name__ == '__main__':
    
    learners = [
-      omega_learner,
-      reward_learner,
+      UpdateTakenLearner(epsilon, 'd^2', CMT(max_memories, router, rank_cos, c, d), megalr=megalr, sort=True),
+      UpdateEveryLearner(epsilon, 'd^2', CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr),
+      UpdateEveryLearner(epsilon, 'rwd', CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr),
       vowpal_learner
    ]
 
    environments = [
-      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=2,n_context=300),
-      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=4,n_context=300),
+      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=2,n_context=20),
+#      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=4,n_context=300),
    ]
 
-   environments = Environments.from_file(json)
+#   environments = Environments.from_file(json)
 
    #Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=RewardLoggingEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()
    Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=OnPolicyEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()

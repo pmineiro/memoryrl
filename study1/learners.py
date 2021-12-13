@@ -44,9 +44,9 @@ class MemoryKey:
     def __eq__(self, __o: object) -> bool:
         return isinstance(__o, MemoryKey) and self.context == __o.context and self.action == __o.action
 
-class OmegaDiffLearner:
+class UpdateTakenLearner:
 
-    def __init__(self, epsilon: float, cmt: CMT, X = ["x","a","xa","xxa"], signal: Literal["abs","^2"] = "^2", megalr:float = 0.1, sort: bool = False) -> None:
+    def __init__(self, epsilon: float, signal:Literal["rwd","d^2","|d|"], cmt: CMT, X = ["x","a","xa","xxa"], megalr:float = 0.1, sort: bool = False) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
         
@@ -61,7 +61,7 @@ class OmegaDiffLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'omega_diff', 'e':self._epsilon, **self._cmt.params, "X": self._X, 'ml': self._megalr, "sig": self._signal, 'srt':self._sort }
+        return { 'family': 'update_taken', 'e':self._epsilon, "sig": self._signal, **self._cmt.params, "X": self._X, 'ml': self._megalr, 'srt':self._sort }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -112,14 +112,14 @@ class OmegaDiffLearner:
 
         learn_start = time.time()
 
-        key = MemoryKey(context, action, self._X)
+        taken_key = MemoryKey(context, action, self._X)
 
         if self._megalr > 0:
-            (u,Z,l) = self._cmt.query(key, k=1, epsilon=0) #we pick best with prob 1-epsilon
+            (u,Z,l) = self._cmt.query(taken_key, k=1, epsilon=0) #we pick best with prob 1-epsilon
             if len(Z) > 0:
                 self._cmt.update_omega(Z[0][0], Z[0][1]+self._megalr*(reward-Z[0][1]))
 
-        (u,Z,l) = self._cmt.query(key, k=2, epsilon=1) #we pick best with prob 1-epsilon
+        (u,Z,l) = self._cmt.query(taken_key, k=2, epsilon=1) #we pick best with prob 1-epsilon
 
         if self._sort:
             Z = sorted(Z, key=lambda z: abs(reward-z[1]))
@@ -133,12 +133,12 @@ class OmegaDiffLearner:
         #    note we esesntially are always doing the special case right now
 
         if len(Z) > 0:
-            error = reward-Z[0][1]
-            error = abs(error) if self._signal == "abs" else (error)**2
-            self._cmt.update(u, key, Z, 1-error)
-        
-        if key not in self._cmt.leaf_by_mem_key:
-            v = self._cmt.insert(key, reward)
+            omega = Z[0][1]
+            loss  = 1-reward if self._signal == 'rwd' else abs(reward-omega) if self._signal == "|d|" else  (reward-omega)**2
+            self._cmt.update(u, taken_key, Z, 1-loss)
+
+        if taken_key not in self._cmt.leaf_by_mem_key:
+            v = self._cmt.insert(taken_key, reward)
         else:
             v = None
 
@@ -161,15 +161,16 @@ class OmegaDiffLearner:
         return None
         #return {**action_info, **update_info, **tree_info}
 
-class RewarDirectLearner:
+class UpdateEveryLearner:
 
-    def __init__(self, epsilon: float, cmt: CMT, X = ["x","a","xa","xxa"], explore:Literal["each","every"]="each", megalr:float = 0.1,) -> None:
+    def __init__(self, epsilon: float, signal:Literal["rwd","d^2","|d|"], cmt: CMT, X = ["x","a","xa","xxa"], explore:Literal["each","every"]="each", megalr:float = 0.1,) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
-        
+
         self._epsilon = epsilon
         self._i       = 0
         self._cmt     = cmt
+        self._signal  = signal
         self._times   = [0, 0]
         self._X       = X
         self._explore = explore
@@ -178,7 +179,7 @@ class RewarDirectLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'reward_dir', 'e':self._epsilon, **self._cmt.params, "X": self._X, 'ml': self._megalr,"exp": self._explore}
+        return { 'family': 'update_every', 'e':self._epsilon, "sig": self._signal, **self._cmt.params, "X": self._X, 'ml': self._megalr,"exp": self._explore}
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -190,7 +191,7 @@ class RewarDirectLearner:
            print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         predict_start = time.time()
-        
+
         if self._explore == "each":
             # we greed EACH action with prob 1-per_action_epsilon
             # this gives 1-self._epsilon chance of greeding all actions and
@@ -228,12 +229,12 @@ class RewarDirectLearner:
         self._times[0] += time.time()-predict_start
 
         info = {'action_leaf_depths':depths, 'action_leaf_sizes': counts, 'action_memories': omegas }
-        return [ int(a in greedy_A)/len(greedy_A) for a in actions ], (info, actions, updates)
+        return [ int(a in greedy_A)/len(greedy_A) for a in actions ], (info, actions, updates, omegas)
 
     def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, predict_info: Any) -> None:
         """Learn about the result of an action that was taken in a context."""
 
-        action_info, actions, updates = predict_info 
+        action_info, actions, updates,omegas = predict_info 
         action_info["action_index"] = actions.index(action)
 
         learn_start = time.time()
@@ -245,9 +246,12 @@ class RewarDirectLearner:
             if len(Z) > 0:
                 self._cmt.update_omega(Z[0][0], Z[0][1]+self._megalr*(reward-Z[0][1]))
 
+        omega = omegas[actions.index(action)]
+        loss  = 1-reward if self._signal == 'rwd' else abs(reward-omega) if self._signal == "|d|" else  (reward-omega)**2
+
         for update in updates:
             if len(update[2]) > 0:
-                self._cmt.update(*update, reward)
+                self._cmt.update(*update, 1-loss)
 
         if key not in self._cmt.leaf_by_mem_key:
             self._cmt.insert(key, reward)

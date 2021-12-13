@@ -164,6 +164,7 @@ class CMT:
     def update(self, u: Optional[Tuple[Node, Node, float]], x: MemKey, Z: Sequence[Memory], r: float):
 
         assert 0 <= r <= 1
+        
         if u is None: return
 
         (v, a, p) = u
