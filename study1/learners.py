@@ -158,7 +158,8 @@ class OmegaDiffLearner:
 
         tree_info = {"leaf_depths": depths, "leaf_mem_cnt": cnts, "leaf_mem_avg": avgs, "leaf_mem_var": vars }
 
-        return {**action_info, **update_info, **tree_info}
+        return None
+        #return {**action_info, **update_info, **tree_info}
 
 class RewarDirectLearner:
 
@@ -260,7 +261,8 @@ class RewarDirectLearner:
 
         tree_info = {"leaf_depths": depths, "leaf_mem_cnt": cnts, "leaf_mem_avg": avgs, "leaf_mem_var": vars }
 
-        return {**action_info, **tree_info}
+        return None
+        #return {**action_info, **tree_info}
 
 # We used to have a ResidualLearner too. The idea was that we'd learn a VW regressor 
 # to predict context/action values and then use the memory tree to learn the residual 
