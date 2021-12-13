@@ -19,7 +19,7 @@ from coba.learners import VowpalLearner, CorralLearner, EpsilonBanditLearner
 
 experiment = 'full6'
 json       = f"./study1/experiments/{experiment}.json"
-log        = None#f"./study1/outcomes/{experiment}_8.log.gz"
+log        = f"./study1/outcomes/{experiment}_9.log.gz"
 config     = {"processes":8, "chunk_by":'task' }
 
 max_memories = 6000
@@ -35,34 +35,25 @@ regr_exp = RegrScorer(base=BaseMetric("exp"), example=DiffExample("abs"), power_
 
 router = Logistic_VW(power_t=0.0)
 
-omega_learner  = OmegaDiffLearner(epsilon, CMT(max_memories, router, rank_cos, c, d), signal='^2', megalr=0.1)
+omega_learner  = OmegaDiffLearner  (epsilon, CMT(max_memories, router, rank_cos, c, d),signal ='^2'  , megalr=megalr, sort=True)
+reward_learner = RewarDirectLearner(epsilon, CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr),
 vowpal_learner = VowpalLearner(epsilon=epsilon, power_t=0)
 corral_learner = CorralLearner([vowpal_learner, omega_learner], eta=.075, T=10000, type="off-policy")
 
 if __name__ == '__main__':
    
-   learners = []
-
-   for megalr in [0,0.1]:
-      learners.extend([
-         OmegaDiffLearner  (epsilon, CMT(max_memories, router, rank_cos, c, d),signal ='^2'  , megalr=megalr),
-         OmegaDiffLearner  (epsilon, CMT(max_memories, router, rank_exp, c, d),signal ='^2'  , megalr=megalr),
-         OmegaDiffLearner  (epsilon, CMT(max_memories, router, rank_cos, c, d),signal ='^2'  , megalr=megalr, sort=True),
-         OmegaDiffLearner  (epsilon, CMT(max_memories, router, rank_exp, c, d),signal ='^2'  , megalr=megalr, sort=True),
-         RewarDirectLearner(epsilon, CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr),
-         RewarDirectLearner(epsilon, CMT(max_memories, router, rank_exp, c, d),explore="each", megalr=megalr),
-         RewarDirectLearner(epsilon, CMT(max_memories, router, regr_cos, c, d),explore="each", megalr=megalr),
-         RewarDirectLearner(epsilon, CMT(max_memories, router, regr_exp, c, d),explore="each", megalr=megalr),
-      ])
+   learners = [
+      omega_learner,
+      reward_learner,
+      vowpal_learner
+   ]
 
    environments = [
       MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=2,n_context=300),
       MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=4,n_context=300),
-      #MemorizableSimulation(n_interactions=1500,n_features=2,n_actions=8,n_context=10)
    ]
 
-   #environments = Environments.from_file(json)
+   environments = Environments.from_file(json)
 
-   #shuffle_env = Environments(environments)
    #Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=RewardLoggingEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()
-   Experiment(environments, learners, environment_task=SimpleEnvironmentTask(), evaluation_task=OnPolicyEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()
+   Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=OnPolicyEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()
