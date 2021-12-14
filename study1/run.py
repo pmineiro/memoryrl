@@ -50,9 +50,11 @@ if __name__ == '__main__':
    ]
 
    environments = Environments([
-      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=2,n_context=400),
+      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=2,n_context=100),
 #      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=4,n_context=300),
    ])
+
+   environments = Environments.from_local_synthetic(4000, n_context_features=2, n_actions=2, n_contexts=20).binary()
 
 #   environments = Environments.from_file(json)
 

@@ -9,44 +9,6 @@ import numpy as np
 from coba.environments import LambdaSimulation, Interaction, EnvironmentFilter, SimulatedEnvironment
 from coba.registry import coba_registry_class
 from coba.random import CobaRandom
-from coba.utilities import HashableDict
-
-@coba_registry_class("features_scaled_to_zero_one")
-class EuclidNormed(EnvironmentFilter):
-
-    @property
-    def params(self):
-        return {"zero_one": True}
-
-    def filter(self, interactions: Iterable[Interaction]) -> Iterable[Interaction]:
-
-        materialized_interactions = list(interactions)
-
-        feature_max = {}
-        feature_min = {}
-
-        for interaction in materialized_interactions:
-            context     = interaction.context
-            keys_values = context.items() if isinstance(context,dict) else enumerate(context)
-
-            for k,v in keys_values:
-                if isinstance(v,Number):
-                    feature_max[k] = max(feature_max.get(k,-math.inf),v)
-                    feature_min[k] = min(feature_min.get(k, math.inf),v)
-
-        for interaction in materialized_interactions:
-            context     = interaction.context
-            keys_values = context.items() if isinstance(context,dict) else enumerate(context)
-            new_context = {} if isinstance(interaction.context,dict) else [0]*len(context)
-
-            for k,v in keys_values:
-                if isinstance(v,Number):
-                    if feature_max[k]!=feature_min[k]:
-                        new_context[k] = (v-feature_min[k])/(feature_max[k]-feature_min[k])
-                else:
-                    new_context[k] = v
-
-                yield Interaction(new_context, interaction.actions, reveals=interaction.reveals, **interaction.results)
 
 @coba_registry_class("bernoulli_flip")
 class BernoulliLabelNoise(EnvironmentFilter):
