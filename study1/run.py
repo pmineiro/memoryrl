@@ -20,7 +20,7 @@ from coba.learners import VowpalLearner, CorralLearner, EpsilonBanditLearner
 experiment = 'full6'
 json       = f"./study1/experiments/{experiment}.json"
 log        = None#f"./study1/outcomes/{experiment}_9.log.gz"
-config     = {"processes":8, "chunk_by":'task' }
+config     = {"processes":8, "chunk_by":'source' }
 
 max_memories = 6000
 epsilon      = 0.1
@@ -56,7 +56,7 @@ if __name__ == '__main__':
 
    environments = Environments.from_local_synthetic(4000, n_context_features=2, n_actions=2, n_contexts=20).binary()
 
-#   environments = Environments.from_file(json)
+   environments = Environments.from_file(json)
 
    #Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=RewardLoggingEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()
    Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=OnPolicyEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()
