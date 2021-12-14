@@ -1,6 +1,6 @@
+import random
 from abc import ABC, abstractmethod
 
-from coba.random import CobaRandom
 from vowpalwabbit import pyvw
 from examples import IdentityExample
 
@@ -28,13 +28,13 @@ class Logistic_VW(RouterFactory):
 
         def __init__(self, vw, index):
             self.vw = vw
-            self.exampler = IdentityExample(int(index*2**bits))
+            self.example = IdentityExample(int(index*2**bits))
 
         def predict(self, xraw):
-            return self.vw.predict(self.exampler.make_example(self.vw, xraw.features()))
+            return self.vw.predict(self.example.make_example(self.vw, xraw.features))
 
         def update(self, xraw, y, w):
-            self.vw.learn(self.exampler.make_example(self.vw, xraw.features(), 0, y, w))
+            self.vw.learn(self.example.make_example(self.vw, xraw.features, 0, y, w))
 
     def __init__(self, power_t:float=0) -> None:
         # We add 10 to bits which means we can represent
@@ -96,7 +96,7 @@ class Logistic_SK(RouterFactory):
 class RandomRouter(RouterFactory,Router):
 
     def __init__(self) -> None:
-        self._rng = CobaRandom(1)
+        self._rng = random.Random(1)
 
     def __call__(self) -> 'RandomRouter':
         return self

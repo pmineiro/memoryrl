@@ -6,8 +6,6 @@ import random
 from typing_extensions import Literal
 from typing import Hashable, Sequence, Dict, Any
 
-import numpy as np
-from sklearn.feature_extraction import FeatureHasher
 from coba.encodings import InteractionsEncoder
 
 from memory import CMT
@@ -18,25 +16,18 @@ bits = 20
 class MemoryKey:
     time = 0
     def __init__(self, context, action, interactions) -> None:
+        
+        features = InteractionsEncoder(interactions).encode(x=context,a=action)
 
-        features = self._featurize(context, action, interactions)
-
-        if isinstance(features[0],tuple):
-            self._features = FeatureHasher(n_features=2**bits, input_type='pair').fit_transform([features])
-            self._features.sort_indices()
+        if isinstance(features,dict):
+            self.features = {(hash(k) % 2**bits):float(v) for k,v in features.items()}
         else:
-            self._features = np.array([features])
+            self.features = [ float(f) for f in features]
+
+        self.context  = context
+        self.action   = action 
 
         self._hash = hash((context,action))
-
-        self.context = context
-        self.action  = action 
-
-    def features(self):
-        return self._features
-
-    def _featurize(self, context, action, interactions):
-        return InteractionsEncoder(interactions).encode(x=context,a=action)
 
     def __hash__(self) -> int:
         return self._hash
@@ -210,7 +201,7 @@ class UpdateEveryLearner:
         for action in actions:
             query_key = MemoryKey(context, action, self._X)
             (u, Z, l) = self._cmt.query(query_key, 2, per_action_epsilon)
-            
+
             updates.append([u, query_key, Z])
             omegas .append(Z[0][1] if Z else -math.inf)
             depths .append(l.depth)

@@ -24,10 +24,11 @@ class IdentityExample(Example):
         self._offset = offset
 
     def _vw_featurize(self, features):
-        if isinstance(features, sp.spmatrix):
-            return list(zip((self._offset+features.indices).tolist(),features.data.tolist()))
+        
+        if isinstance(features, dict):
+            return [ (self._offset+k,v) for k,v in features.items() ]
         else:
-            return list(zip(count(self._offset), features[0].tolist()))
+            return list(zip(count(self._offset), features))
     
     def interactions(self):
         return []
@@ -103,7 +104,7 @@ class DiffExample(Example):
 
     def __init__(self, element_wise_op:str="^2") -> None:
 
-        assert element_wise_op in ["^2", "abs", "none"]
+        assert element_wise_op in ["^2", "abs"]
 
         self._element_wise_op = element_wise_op
  
@@ -115,33 +116,19 @@ class DiffExample(Example):
 
     def feat(self, ex1, ex2):
 
-        ef1 = ex1.features()
-        ef2 = ex2.features()
+        x1 = ex1.features
+        x2 = ex2.features
 
-        diff = ef1-ef2
+        op = (lambda x: x**2) if self._element_wise_op == "^2" else (abs)
 
-        if self._element_wise_op == "none":
-            return diff
-        
-        if self._element_wise_op == "^2" and sp.issparse(diff):
-            return diff.power(2) #fastest way to calculate this that I could find
-
-        if self._element_wise_op == "^2" and not sp.issparse(diff):
-            return diff**2
-
-        if self._element_wise_op == "abs":
-            return abs(diff)
-
-        raise Exception("something unexpected happened")
+        if isinstance(x1,dict) and isinstance(x2,dict):
+            return [ (k, op(x1.get(k,0)-x2.get(k,0))) for k in (x1.keys() | x2.keys()) ]
+        else:
+            return [ (i, op(v1-v2)) for i,v1,v2 in zip(count(),x1,x2) ] 
 
     def make_example(self, vw, query, memory, base=0, label=0, weight=1):
 
-        feats = self.feat(query, memory)
-
-        if isinstance(feats, sp.spmatrix):            
-            vw_feats = list(zip(feats.indices.tolist(), feats.data.tolist()))
-        else:
-            vw_feats = list(enumerate(feats[0].tolist()))
+        vw_feats = self.feat(query, memory)
 
         ex = pyvw.example(vw, {"x": vw_feats})
         ex.set_label_string(f"{label} {weight} {base}")

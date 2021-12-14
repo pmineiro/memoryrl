@@ -1,14 +1,11 @@
+import math
+
 from abc import ABC, abstractmethod
 from typing import Sequence
 
 from coba.random import CobaRandom
 from coba.learners import UcbBanditLearner
 from vowpalwabbit import pyvw
-
-from scipy.spatial import distance
-
-import numpy as np
-import scipy.sparse as sp
 
 from examples import Example, InteractionExample, DiffExample
 
@@ -26,98 +23,57 @@ class Scorer(ABC):
 
 class BaseMetric:
 
-    def __init__(self, base="none", maxnorm=False):
+    def __init__(self, base="none"):
 
         assert base in ["none", "l1", "l2", "l2^2", "cos", "exp"]
 
-        self.base    = base
-        self.maxnorm = maxnorm
-        self.max     = -np.inf
+        self.base = base
 
     def calculate_base(self, query_context, mem_context):
-        base = self._calculate_base(query_context, mem_context)
-        self.max = max(self.max,base)
-
-        if self.maxnorm:
-            return base/(self.max+int(self.max==0))
-        else:
-            return base
-
-    def _calculate_base(self, query_context, mem_context):
         if self.base == "none":
             return 0
 
-        ef1 = query_context.features()
-        ef2 = mem_context.features()
-
-        if self.base == "l1":
-            if sp.issparse(ef1):
-                data = (ef1-ef2).data
-                return 0 if len(data) == 0 else distance.minkowski((ef1-ef2).data,0,p=1)
-            else:
-                return distance.minkowski(ef1,ef2,p=1)
-
-        if self.base == "l2":
-            if sp.issparse(ef1):
-                data = (ef1-ef2).data
-                return 0 if len(data) == 0 else distance.euclidean(data,0)
-            else:
-                return distance.euclidean(ef1,ef2)
-
-        if self.base == "l2^2":
-            if sp.issparse(ef1):
-                data = (ef1-ef2).data
-                return 0 if len(data) == 0 else distance.sqeuclidean((ef1-ef2).data,0)
-            else:
-                return distance.sqeuclidean(ef1,ef2)
+        x1 = query_context.features
+        x2 = mem_context.features
 
         if self.base == "cos":
-            if sp.issparse(ef1):
-                n1 = distance.euclidean(ef1.data,0)
-                n2 = distance.euclidean(ef2.data,0)
-                return (1-self._sparse_dp(ef1,ef2)/(n1*n2))/2
-            else:
-                return distance.cosine(ef1, ef2) / 2
+            n1 = self._norm(x1,"l2")
+            n2 = self._norm(x2,"l2")
+            return (1-self._dot(x1,x2)/(n1*n2))/2
 
         if self.base == "exp":
-            if sp.issparse(ef1):
-                data = (ef1-ef2).data
-                return 0 if len(data) == 0 else np.exp(-distance.euclidean(data,0))
-            else:
-                return 1-np.exp(-distance.euclidean(ef1,ef2))
+            return math.exp(-self._metric(x1,x2,"l2"))
 
-    def _sparse_dp(self,x1,x2):
+        return self._metric(x1,x2,self.base)
 
-        x1.sort_indices()
-        x2.sort_indices()
+    def _norm(self,x1,d):
+        if isinstance(x1,dict):
+            vs = x1.values()
+        else:
+            vs = x1
+        
+        if d=="l1":
+            return sum(abs(v) for v in vs)
+        
+        if d=="l2":
+            return math.sqrt(sum((v)**2 for v in vs))
 
-        idx1 = x1.indices
-        idx2 = x2.indices
+        if d=="l2^2":
+            return sum((v)**2 for v in vs)
 
-        dat1 = x1.data
-        dat2 = x2.data
+    def _metric(self,x1,x2,d):
+        if isinstance(x1,dict) and isinstance(x2,dict):
+            vs = (x1.get(k,0)-x2.get(k,0) for k in (x1.keys() | x2.keys()))
+        else:
+            vs = (i-j for i,j in zip(x1,x2))
+        
+        self._norm(vs,d)
 
-        i=0
-        j=0
-
-        v = 0
-
-        while True:
-
-            if i == len(idx1) or j == len(idx2):
-                return v
-
-            idx1_i = idx1[i]
-            idx2_j = idx2[j]
-
-            if idx1_i == idx2_j:
-                v += dat1[i]*dat2[j]
-            
-            if idx1_i <= idx2_j:
-                i += 1
-
-            if idx2_j <= idx1_i:
-                j += 1
+    def _dot(self,x1,x2):
+        if isinstance(x1,dict) and isinstance(x2,dict):
+            return sum([x1[k]*x2[k] for k in (x1.keys() & x2.keys())])
+        else:
+            return sum([i*j for i,j in zip(x1,x2)])
 
     def __repr__(self) -> str:
         return f"base({self.base})"

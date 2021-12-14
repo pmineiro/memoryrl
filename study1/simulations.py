@@ -9,6 +9,7 @@ import numpy as np
 from coba.environments import LambdaSimulation, Interaction, EnvironmentFilter, SimulatedEnvironment
 from coba.registry import coba_registry_class
 from coba.random import CobaRandom
+from coba.utilities import HashableDict
 
 @coba_registry_class("features_scaled_to_zero_one")
 class EuclidNormed(EnvironmentFilter):
@@ -94,7 +95,9 @@ class MemorizableSimulation(SimulatedEnvironment):
 
         rng = CobaRandom(self._seed)
 
-        contexts = [tuple(rng.randoms(self._n_features)) for _ in range(self._n_contexts) ]
+        #contexts = [ HashableDict(enumerate(rng.randoms(self._n_features))) for _ in range(self._n_contexts) ]
+        contexts = [ tuple(rng.randoms(self._n_features)) for _ in range(self._n_contexts) ]
+        
         actions  = [ tuple(l) for l in np.eye(self._n_actions).astype(int)]
         rewards  = defaultdict(int)
 

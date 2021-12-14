@@ -44,15 +44,15 @@ if __name__ == '__main__':
    
    learners = [
       UpdateTakenLearner(epsilon, 'd^2', CMT(max_memories, router, rank_cos, c, d), megalr=megalr, sort=True),
-      UpdateEveryLearner(epsilon, 'd^2', CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr),
-      UpdateEveryLearner(epsilon, 'rwd', CMT(max_memories, router, rank_cos, c, d),explore="each", megalr=megalr),
+      UpdateEveryLearner(epsilon, 'd^2', CMT(max_memories, router, rank_cos, c, d), megalr=megalr, explore="each"),
+      UpdateEveryLearner(epsilon, 'rwd', CMT(max_memories, router, rank_cos, c, d), megalr=megalr, explore="each"),
       vowpal_learner
    ]
 
-   environments = [
-      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=2,n_context=20),
+   environments = Environments([
+      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=2,n_context=400),
 #      MemorizableSimulation(n_interactions=4000,n_features=2,n_actions=4,n_context=300),
-   ]
+   ])
 
 #   environments = Environments.from_file(json)
 
