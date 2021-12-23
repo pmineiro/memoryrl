@@ -5,8 +5,12 @@ from typing import Sequence
 
 from coba.random import CobaRandom
 from coba.learners import UcbBanditLearner
-from vowpalwabbit import pyvw
 
+import torch
+import torch.nn
+import torch.optim
+
+from vowpalwabbit import pyvw
 from examples import Example, InteractionExample, DiffExample
 
 bits = 20
@@ -81,6 +85,75 @@ class BaseMetric:
     def __str__(self) -> str:
         return self.__repr__()
 
+class TorchScorer(Scorer):
+
+    def __init__(self, l2=0, power_t=0, base:BaseMetric=BaseMetric(), example:Example=InteractionExample()):
+
+        self.example = example
+        self.base = base
+        self.t = 0
+        self.model = None
+
+    def predict(self, query_key, memory_keys):
+
+        if self.model == None:
+
+            class LinearRegression(torch.nn.Module):
+                def __init__(s, inputSize, outputSize):
+                    super().__init__()
+                    s.weights = torch.nn.Parameter(torch.zeros((inputSize, outputSize)))
+                    s.linear = torch.nn.Linear(inputSize, outputSize,bias=False)
+
+                def forward(s, x):
+                    base     = self.base.calculate_base(*x)
+                    features = torch.tensor([ f[1] for f in self.example.feat(*x)])
+
+                    return base+ (features @ s.weights.exp())[0]
+
+            self.model     = LinearRegression(len(query_key.features), 1)
+            self.criterion = torch.nn.MSELoss() 
+            self.optimizer = torch.optim.Adam(self.model.parameters())
+
+        values = []
+
+        with torch.no_grad():
+            for memory_key in memory_keys:
+                values.append(-self.model((query_key,memory_key)).item())
+
+        return values
+
+    def update(self, query_key, memory_keys, r):
+
+        self.t += 1
+
+        if len(memory_keys) == 0: return
+
+        self.optimizer.zero_grad()
+
+        if len(memory_keys) >= 1:
+            # get output from the model, given the inputs
+            outputs = self.model((query_key, memory_keys[0]))
+            # get loss for the predicted output
+            loss = self.criterion(outputs, torch.tensor(1-r).float())
+            # get gradients w.r.t to parameters
+            loss.backward()
+
+        if len(memory_keys) >= 2:
+            # get output from the model, given the inputs
+            outputs = self.model((query_key, memory_keys[1]))
+            # get loss for the predicted output
+            loss = self.criterion(outputs, torch.tensor(r).float())
+            # get gradients w.r.t to parameters
+            loss.backward()
+
+        self.optimizer.step()
+
+    def __repr__(self) -> str:
+        return f"torch"
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
 class RegrScorer(Scorer):
 
     def __init__(self, l2=0, power_t=0, base:BaseMetric=BaseMetric(), example:Example=InteractionExample()):
@@ -90,9 +163,9 @@ class RegrScorer(Scorer):
         vw_ignore_linear = " ".join([ f"--ignore_linear {i}" for i in example.ignored() ])
         vw_interactions  = " ".join([ f"--interactions {i}" for i in example.interactions() ])
 
-        self.exampler = example
+        self.example = example
 
-        self.vw = pyvw.vw(f'--quiet -b {bits} --l2 {l2} --power_t {power_t} --min_prediction -1 --max_prediction 2 {vw_ignore_linear} {vw_interactions}')
+        self.vw = pyvw.vw(f'--quiet -b {bits} --l2 {l2} --power_t {power_t} --noconstant --min_prediction 0 --max_prediction 2 {vw_ignore_linear} {vw_interactions}')
 
         self.t       = 0
         self.l2      = l2
@@ -111,9 +184,9 @@ class RegrScorer(Scorer):
 
         for memory_key in memory_keys:
 
-            base    = 1-2*self.base.calculate_base(query_key, memory_key)
-            example = self.exampler.make_example(self.vw, query_key, memory_key, base)
-            values.append(self.vw.predict(example))
+            base    = self.base.calculate_base(query_key, memory_key)
+            example = self.example.make_example(self.vw, query_key, memory_key, base)
+            values.append(-self.vw.predict(example))
             self.vw.finish_example(example)
 
         return values
@@ -121,10 +194,18 @@ class RegrScorer(Scorer):
     def update(self, query_key, memory_keys, r):
 
         self.t += 1
-        base    = 1-2*self.base.calculate_base(query_key, memory_keys[0])
-        example = self.exampler.make_example(self.vw, query_key, memory_keys[0], base, r)
-        self.vw.learn(example)
-        self.vw.finish_example(example)
+
+        if len(memory_keys) >= 1:
+            base    = self.base.calculate_base(query_key, memory_keys[0]) # 0->1 where 1 is bad
+            example = self.example.make_example(self.vw, query_key, memory_keys[0], base, 1-r, 1) #0
+            self.vw.learn(example)
+            self.vw.finish_example(example)
+
+        if len(memory_keys) >= 2:
+            base    = self.base.calculate_base(query_key, memory_keys[1]) 
+            example = self.example.make_example(self.vw, query_key, memory_keys[1], base, 1, 1) #1
+            self.vw.learn(example)
+            self.vw.finish_example(example)
 
     def __repr__(self) -> str:
         return f"regr{self.args}"

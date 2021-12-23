@@ -267,7 +267,7 @@ class CMT:
             v.n += 1
             assert v.n == len(v.memories)
 
-        else:
+        else:            
             self.splitting = True
             mem = v.make_internal(g=self.g_factory())
 

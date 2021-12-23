@@ -29,11 +29,13 @@ class Logistic_VW(RouterFactory):
         def __init__(self, vw, index):
             self.vw = vw
             self.example = IdentityExample(int(index*2**bits))
+            self.t = 0
 
         def predict(self, xraw):
             return self.vw.predict(self.example.make_example(self.vw, xraw.features))
 
         def update(self, xraw, y, w):
+            self.t+=1
             self.vw.learn(self.example.make_example(self.vw, xraw.features, 0, y, w))
 
     def __init__(self, power_t:float=0) -> None:
