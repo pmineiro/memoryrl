@@ -9,6 +9,7 @@ from coba.learners import UcbBanditLearner
 import torch
 import torch.nn
 import torch.optim
+import torch.sparse
 
 from vowpalwabbit import pyvw
 from examples import Example, InteractionExample, DiffExample
@@ -46,16 +47,11 @@ class BaseMetric:
             return (1-self._dot(x1,x2)/(n1*n2))/2
 
         if self.base == "exp":
-            return math.exp(-self._metric(x1,x2,"l2"))
+            return 1-math.exp(-self._metric(x1,x2,"l1"))
 
         return self._metric(x1,x2,self.base)
 
-    def _norm(self,x1,d):
-        if isinstance(x1,dict):
-            vs = x1.values()
-        else:
-            vs = x1
-        
+    def _norm(self,vs,d):        
         if d=="l1":
             return sum(abs(v) for v in vs)
         
@@ -66,12 +62,13 @@ class BaseMetric:
             return sum((v)**2 for v in vs)
 
     def _metric(self,x1,x2,d):
-        if isinstance(x1,dict) and isinstance(x2,dict):
-            vs = (x1.get(k,0)-x2.get(k,0) for k in (x1.keys() | x2.keys()))
-        else:
-            vs = (i-j for i,j in zip(x1,x2))
         
-        self._norm(vs,d)
+        if isinstance(x1,dict) and isinstance(x2,dict):
+            vs = [x1.get(k,0)-x2.get(k,0) for k in (x1.keys() | x2.keys())]
+        else:
+            vs = [i-j for i,j in zip(x1,x2)]
+
+        return self._norm(vs,d)
 
     def _dot(self,x1,x2):
         if isinstance(x1,dict) and isinstance(x2,dict):
@@ -80,39 +77,68 @@ class BaseMetric:
             return sum([i*j for i,j in zip(x1,x2)])
 
     def __repr__(self) -> str:
-        return f"base({self.base})"
+        return self.__str__()
 
     def __str__(self) -> str:
-        return self.__repr__()
+        return f"base({self.base})"
 
 class TorchScorer(Scorer):
 
-    def __init__(self, l2=0, power_t=0, base:BaseMetric=BaseMetric(), example:Example=InteractionExample()):
+    def __init__(self, l2=0, power_t=0, v=1, exp=True, optim=True, base:BaseMetric=BaseMetric(), example:Example=InteractionExample()):
 
         self.example = example
         self.base = base
         self.t = 0
         self.model = None
+        self.optim = optim
+        self.exp = exp
+        self.v = v
 
     def predict(self, query_key, memory_keys):
 
         if self.model == None:
 
+            is_dense = not isinstance(query_key.context,dict)
+
             class LinearRegression(torch.nn.Module):
-                def __init__(s, inputSize, outputSize):
+                def __init__(s):
                     super().__init__()
-                    s.weights = torch.nn.Parameter(torch.zeros((inputSize, outputSize)))
-                    s.linear = torch.nn.Linear(inputSize, outputSize,bias=False)
+
+                    if is_dense:
+                        s.weights = torch.nn.Parameter(torch.zeros((len(query_key.features),1)), requires_grad=True)
+                    else:
+                        s.weights = torch.nn.Parameter(torch.zeros((2**bits,1)), requires_grad=True)
+
+                    if self.v in [1,3]:
+                        s.transform = torch.nn.Identity()
+                    else:
+                        if is_dense:
+                            s.transform = torch.nn.Softmax(dim=0)
+                        else:
+                            raise NotImplementedError()
 
                 def forward(s, x):
-                    base     = self.base.calculate_base(*x)
-                    features = torch.tensor([ f[1] for f in self.example.feat(*x)])
+                    base = self.base.calculate_base(*x)-1
 
-                    return base+ (features @ s.weights.exp())[0]
+                    if is_dense:
+                        features = torch.tensor([[f[1] for f in self.example.feat(*x)]])
+                    else:
+                        cols,values = zip(*self.example.feat(*x))
+                        rows = [0]*len(cols) 
+                        features = torch.sparse_coo_tensor([rows,cols],values,(1,2**bits))
 
-            self.model     = LinearRegression(len(query_key.features), 1)
-            self.criterion = torch.nn.MSELoss() 
-            self.optimizer = torch.optim.Adam(self.model.parameters())
+                    if is_dense:
+                        return base + torch.mm(features,s.transform(s.weights)).squeeze()
+                    else:
+                        return base + torch.sparse.mm(features,s.transform(s.weights)).squeeze()
+
+            self.model     = LinearRegression()
+            self.criterion = torch.nn.MSELoss()
+
+            #if is_dense:
+            self.optimizer = torch.optim.Adam(list(self.model.parameters()))
+            #else:
+            #    self.optimizer = torch.optim.SparseAdam(list(self.model.parameters()))
 
         values = []
 
@@ -124,32 +150,37 @@ class TorchScorer(Scorer):
 
     def update(self, query_key, memory_keys, r):
 
+        if r == 0:
+            return
+
         self.t += 1
 
         if len(memory_keys) == 0: return
 
-        self.optimizer.zero_grad()
+        loss = []
 
         if len(memory_keys) >= 1:
             # get output from the model, given the inputs
-            outputs = self.model((query_key, memory_keys[0]))
+            output = self.model((query_key, memory_keys[0]))
             # get loss for the predicted output
-            loss = self.criterion(outputs, torch.tensor(1-r).float())
-            # get gradients w.r.t to parameters
-            loss.backward()
+            loss = self.criterion(output, torch.tensor(0).float())
 
         if len(memory_keys) >= 2:
             # get output from the model, given the inputs
-            outputs = self.model((query_key, memory_keys[1]))
+            output = self.model((query_key, memory_keys[1]))
             # get loss for the predicted output
-            loss = self.criterion(outputs, torch.tensor(r).float())
-            # get gradients w.r.t to parameters
-            loss.backward()
+            loss += self.criterion(output, torch.tensor(1).float())
 
-        self.optimizer.step()
+        if self.optim:
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            
+            if self.v == 1:
+                self.model.weights.data.clamp_min_(0)
 
     def __repr__(self) -> str:
-        return f"torch"
+        return f"torch({self.optim},{self.v},{self.base})"
 
     def __str__(self) -> str:
         return self.__repr__()

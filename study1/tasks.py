@@ -4,14 +4,14 @@ from typing import Tuple, Iterable
 from learners import MemorizedLearner
 from coba.learners import Learner
 from coba.environments import Interaction
-from coba.experiments import EvaluationTask, OnPolicyEvaluationTask
+from coba.experiments import EvaluationTask, OnlineOnPolicyEvalTask
 
 class RewardLoggingEvaluationTask(EvaluationTask):
 
     def process(self, learner: Learner, interactions: Iterable[Interaction]) -> Iterable[dict]:
 
         a,b = tee(interactions)
-        d   = OnPolicyEvaluationTask().process(learner,b)
+        d   = OnlineOnPolicyEvalTask().process(learner,b)
 
         for interaction, eval_result in zip(a,d):
             eval_result["correct_action"] = interaction.kwargs["rewards"].index(1)
@@ -21,7 +21,7 @@ class FinalPrintEvaluationTask(EvaluationTask):
 
     def process(self, learner: Learner, interactions: Iterable[Interaction]) -> Iterable[dict]:
 
-        d = list(OnPolicyEvaluationTask().process(learner,interactions))
+        d = list(OnlineOnPolicyEvalTask().process(learner,interactions))
 
         if isinstance(learner, MemorizedLearner):
             print(f"s: {learner._cmt.f.t}")

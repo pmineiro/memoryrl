@@ -43,9 +43,10 @@ class MemorizedLearner:
         X            : Sequence[str] = ["x","a","xa","xxa"], 
         explore      : Literal["each","every","e-greedy"] = "each", 
         every_update : bool = True,
-        taken_update : int = 1,
+        taken_update : int = 0,
         megalr       : float = 0.1,
-        sort: bool = True) -> None:
+        sort         : bool = True,
+        direct_update: bool = False) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 
@@ -61,6 +62,7 @@ class MemorizedLearner:
         self._E_update = every_update
         self._T_update = taken_update
         self._sort     = sort
+        self._du       = direct_update
 
     @property
     def params(self) -> Dict[str,Any]:
@@ -71,10 +73,7 @@ class MemorizedLearner:
             **self._cmt.params, 
             'X': self._X, 
             'ml': self._megalr, 
-            'exp': self._explore, 
-            'Eup': self._E_update,
-            'Tup': self._T_update,
-            'srt': self._sort
+            'du' : self._du
         }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
@@ -164,6 +163,8 @@ class MemorizedLearner:
             for update in updates:
                 if len(update[2]) > 0:
                     self._cmt.update(*update, 1-loss)
+                    if self._du:
+                        self._cmt.f.update(update[1], [z[0] for z in update[2]], 1-loss)
 
         for _ in range(self._T_update):
             (u, Z, l) = self._cmt.query(key, 2, 1)
@@ -187,11 +188,11 @@ class MemorizedLearner:
         if key not in self._cmt.leaf_by_mem_key:
             self._cmt.insert(key, reward)
 
-#        if self._cmt.f.t > old_t:
-#            print(f'update on {self._i}')
+        # if self._cmt.f.t > old_t:
+        #     print(f'update on {self._i}')
 
-#        if old_m < len(self._cmt.leaf_by_mem_key):
-#            print(f"split on {self._i}")
+        # if old_m < len(self._cmt.leaf_by_mem_key):
+        #     print(f"split on {self._i}")
 
         self._times[1] += time.time()-learn_start
 

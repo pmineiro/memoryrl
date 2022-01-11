@@ -110,7 +110,7 @@ class CMT:
         def remove(self, x: MemKey):
             self.entry_finder.pop(x)
 
-    def __init__(self, max_mem:int, router: RouterFactory, scorer: Scorer, c:int, d:int, alpha:float=0.25, rng:Random= Random(1337)):
+    def __init__(self, max_mem:int, router: RouterFactory, scorer: Scorer, c:int, d:int, alpha:float=0.25, i: bool = False, rng:Random= Random(1337)):
 
         self.max_mem   = max_mem
         self.g_factory = router
@@ -118,6 +118,7 @@ class CMT:
         self.alpha     = alpha
         self.c         = c
         self.d         = d
+        self.i         = i
         self.rng       = rng
 
         self.root = CMT.Node(None, rng)
@@ -132,7 +133,7 @@ class CMT:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'm': self.max_mem, 'd': self.d, 'c': self.c, "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
+        return { 'm': self.max_mem, 'd': self.d, 'c': self.c, "a": self.alpha, "i": self.i, "scr": str(self.f), "rou": str(self.g_factory) }
 
     def __path(self, x, v: 'CMT.Node'):
         path = []
@@ -267,7 +268,7 @@ class CMT:
             v.n += 1
             assert v.n == len(v.memories)
 
-        else:            
+        else:
             self.splitting = True
             mem = v.make_internal(g=self.g_factory())
 
@@ -282,14 +283,12 @@ class CMT:
             self.insert(x, omega, v)
             self.splitting = False
 
-        #this is very important for residual learner, less so for memorized learner
-        # if not self.rerouting and not self.splitting:
-        #     daleaf = self.leaf_by_mem_key[x]
-        #     dabest = daleaf.topk(x, 2, self.f)
-        #     if len(dabest) > 1:
-        #         other = dabest[1] if dabest[0][0] == x else dabest[0]
-        #         z = [(x, omega), other]
-        #         self.f.update(x, z, 1)
+        if self.i:
+            daleaf = self.leaf_by_mem_key[x]
+            dabest = daleaf.topk(x, 2, self.f)
+            if len(dabest) > 1:
+                other = dabest[1] if dabest[0][0] == x else dabest[0]
+                self.f.update(x, [x, other[0]], 1)
 
     def __reroute(self):
         x = self.rng.choice(list(self.leaf_by_mem_key.keys()))
@@ -298,6 +297,7 @@ class CMT:
         self.rerouting = True
         self.delete(x)
         self.insert(x, o)
+
         self.rerouting = False
 
     def print(self):
