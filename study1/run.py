@@ -19,8 +19,8 @@ from coba.learners import VowpalEpsilonLearner, CorralLearner, EpsilonBanditLear
 
 experiment = 'full6'
 json       = f"./study1/experiments/{experiment}.json"
-log        = f"./study1/outcomes/{experiment}_11.log.gz"
-config     = {"processes": 8, "chunk_by":'task' }
+log        = None# f"./study1/outcomes/{experiment}_11.log.gz"
+config     = {"processes": 1, "chunk_by":'task' }
 
 max_memories = 6000
 epsilon      = 0.1
@@ -38,9 +38,9 @@ torch_exp = TorchScorer(base=BaseMetric("exp"), example=DiffExample("abs"), opti
 
 router = Logistic_VW(power_t=0.0)
 
-omega_learner  = MemorizedLearner(0.1, 'd^2', CMT(max_memories, router, rank_cos, c, d,  .25), megalr=0, explore='each', every_update=True , taken_update=0, sort=True)
+memory_learner = MemorizedLearner(0.1, 'd^2', CMT(max_memories, router, rank_cos , c, d, .25, True), megalr=0, direct_update=False)
 vowpal_learner = VowpalEpsilonLearner(epsilon=epsilon, power_t=0)
-corral_learner = CorralLearner([vowpal_learner, omega_learner], eta=.075, T=10000, mode="off-policy")
+corral_learner = CorralLearner([vowpal_learner, memory_learner], eta=.075, T=6000, mode="off-policy")
 
 if __name__ == '__main__':
    
@@ -52,6 +52,10 @@ if __name__ == '__main__':
       #MemorizedLearner(0.1, 'd^2', CMT(max_memories, router, rank_cos, c, d,  .25), megalr=0, explore='each', every_update=False, taken_update=1, sort=True),
       #MemorizedLearner(0.1, 'd^2', CMT(max_memories, router, rank_cos, c, d,  .25), megalr=0, explore='each', every_update=True , taken_update=1, sort=True),
       vowpal_learner
+   ]
+
+   learners = [
+      corral_learner
    ]
 
    #environments = Environments.from_local_synthetic(5000, n_context_features=10, n_actions=2, n_contexts=10).binary().shuffle(range(2))

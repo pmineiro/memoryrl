@@ -161,7 +161,7 @@ class MemorizedLearner:
 
         if self._E_update:
             for update in updates:
-                if len(update[2]) > 0:
+                if len(update[2]) > 0 and not math.isinf(loss):
                     self._cmt.update(*update, 1-loss)
                     if self._du:
                         self._cmt.f.update(update[1], [z[0] for z in update[2]], 1-loss)
