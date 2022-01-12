@@ -56,12 +56,20 @@ class CMT:
                 if self.left : self.left.parent = self
                 if self.right: self.right.parent = self
 
+        def leafchoicecount(self, k:int) -> int:
+            assert self.is_leaf
+            assert k == 2
+
+            numkeys     = len(list(self.memories.keys()))
+            return 1 if numkeys <= 2 else ((numkeys * (numkeys - 1)) // 2)
+
         def topk(self, x, k:int, f:Scorer) -> Sequence[Memory]:
 
             assert self.is_leaf
 
+            memories    = list(self.memories.items())
             keys        = list(self.memories.keys())
-            scores      = dict(zip(keys,f.predict(x, keys)))
+            scores      = dict(zip(keys,f.predict(x, memories)))
             sorted_keys = sorted(keys, key=scores.__getitem__, reverse=True) 
 
             return [ (key,self.memories[key]) for key in sorted_keys[0:k]]
@@ -150,35 +158,51 @@ class CMT:
 
         q = self.rng.uniform(0, 1) 
         i = self.rng.randint(0, len(path.nodes))
+        leafchoicecount = path.leaf.leafchoicecount(k)
+        greedyp = 1 - epsilon + epsilon / leafchoicecount
+        explorep = epsilon / leafchoicecount
+        scalep = min(greedyp, explorep)
 
         if q >= epsilon:
-            return (None, path.leaf.topk(x, k, self.f), path.leaf)
+            a = path.leaf.topk(x, k, self.f)
+            return ((path.leaf, None, greedyp, scalep), a, path.leaf)
  
         elif i < len(path.nodes):
-            a = self.rng.choice([path.nodes[i].left, path.nodes[i].right])
-            l = self.__path(x, a).leaf
-            return ((path.nodes[i], a, 1/2), l.topk(x, k, self.f), l) #update will update the router at path.nodes[i]
+            node = self.rng.choice([path.nodes[i].left, path.nodes[i].right])
+            newleaf = self.__path(x, node).leaf
+            return ((path.nodes[i], node, 1/2, 1), newleaf.topk(x, k, self.f), newleaf)
 
         else:
-            return ((path.leaf, None, None), path.leaf.randk(k), path.leaf) # update will update the scorer
+            greedy = path.leaf.topk(x, k, self.f)
+            a = path.leaf.randk(k)
+            if a == greedy: explorep = greedyp
+            return ((path.leaf, None, explorep, scalep), a, path.leaf)
 
-    def update(self, u: Optional[Tuple[Node, Node, float]], x: MemKey, Z: Sequence[Memory], r: float):
+    def update(self, 
+        u: Tuple[Node, Optional[Node], float, float], 
+        x: MemKey, 
+        r: float,
+        Z: Sequence[Memory], 
+        R: Sequence[float]) -> None:
 
         assert 0 <= r <= 1
-        
+
         if u is None: return
 
-        (v, a, p) = u
+        (v, node, p, scalep) = u
 
-        if p is None:
-            self.f.update(x, [z[0] for z in Z], r)
+        assert p is not None
+
+        if node is None: # scorer update
+            self.f.update(x, Z, R, (scalep/p)) # todo: only makes sense for logistic (target = importance weight)
 
             if len(Z) > 0:
                 if self.rng.uniform(0, 1) <= r:
                     self.keyslru.remove(Z[0][0])
                     self.keyslru.add(Z[0][0])
-        else:
-            rhat = (r/p) * (1 if a == v.right else -1)
+
+        else: # router update
+            rhat = r *(scalep / p) * (1 if node == v.right else -1)
             B    = log(1e-2 + v.left.n) - log(1e-2 + v.right.n)
             y    = (1 - self.alpha) * rhat + self.alpha * B
 
@@ -230,7 +254,7 @@ class CMT:
             B     = log(1e-2 + v.left.n) - log(1e-2 + v.right.n)
             y     = (1 - self.alpha) * v.g.predict(x) + self.alpha * B
             signy = 1 if y > 0 else -1
-            
+
             v.n += 1
             v.g.update(x, signy, 1)
             v = v.right if v.g.predict(x) > 0 else v.left
@@ -244,7 +268,7 @@ class CMT:
 
             for _ in range(self.d):
                 self.__reroute()
-        
+
         return v
 
     def update_omega(self, x: MemKey, newomega:MemVal):
@@ -252,43 +276,50 @@ class CMT:
         assert v.is_leaf
         v.memories[x] = newomega
 
-    def __insertLeaf(self, x: MemKey, omega: MemVal, v: 'CMT.Node'):
-        assert v.is_leaf
+    def __insertLeaf(self, x: MemKey, omega: MemVal, leaf: 'CMT.Node'):
+        
+        assert leaf.is_leaf
 
         if not self.rerouting and not self.splitting:
             self.keyslru.add(x)
 
-        if v.n <= self.c*log(self.root.n+1):
-            
-            assert x not in self.leaf_by_mem_key
-            assert x not in v.memories
+        if leaf.n <= self.c*log(self.root.n+1):
 
-            self.leaf_by_mem_key[x] = v
-            v.memories[x] = omega
-            v.n += 1
-            assert v.n == len(v.memories)
+            assert x not in self.leaf_by_mem_key
+            assert x not in leaf.memories
+
+            self.leaf_by_mem_key[x] = leaf
+            leaf.memories[x] = omega
+            leaf.n += 1
+            assert leaf.n == len(leaf.memories)
 
         else:
             self.splitting = True
-            mem = v.make_internal(g=self.g_factory())
+            mem = leaf.make_internal(g=self.g_factory())
 
-            self.nodes.append(v.left)
-            self.nodes.append(v.right)
+            self.nodes.append(leaf.left)
+            self.nodes.append(leaf.right)
 
             while mem:
                 xprime, omegaprime = mem.popitem()
                 del self.leaf_by_mem_key[xprime]
-                self.insert(xprime, omegaprime, v)
+                self.insert(xprime, omegaprime, leaf)
 
-            self.insert(x, omega, v)
+            self.insert(x, omega, leaf)
             self.splitting = False
 
         if self.i:
             daleaf = self.leaf_by_mem_key[x]
             dabest = daleaf.topk(x, 2, self.f)
+
             if len(dabest) > 1:
                 other = dabest[1] if dabest[0][0] == x else dabest[0]
-                self.f.update(x, [x, other[0]], 1)
+
+                Z = [(x,omega), other]
+                R = [1, 0]
+                w = 1
+
+                self.f.update(x, Z, R, w)
 
     def __reroute(self):
         x = self.rng.choice(list(self.leaf_by_mem_key.keys()))

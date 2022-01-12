@@ -19,11 +19,11 @@ bits = 20
 class Scorer(ABC):
 
     @abstractmethod
-    def predict(self, query_key, memory_keys) -> Sequence[float]:
+    def predict(self, query_key, memories) -> Sequence[float]:
         ...
 
     @abstractmethod
-    def update(self, query_key, memory_keys, y):
+    def update(self, query_key, memories, memory_rwds, prob):
         ...
 
 class BaseMetric:
@@ -94,7 +94,9 @@ class TorchScorer(Scorer):
         self.exp = exp
         self.v = v
 
-    def predict(self, query_key, memory_keys):
+    def predict(self, query_key, memories):
+
+        memory_keys = [ mem[0] for mem in memories ]
 
         if self.model == None:
 
@@ -148,14 +150,15 @@ class TorchScorer(Scorer):
 
         return values
 
-    def update(self, query_key, memory_keys, r):
+    def update(self, query_key, memories, memory_rwds, prob):
 
-        if r == 0:
-            return
-
+        memory_keys = [ mem[0] for mem in memories ]
+        memory_keys,memory_rwds = zip(*sorted(zip(memory_keys,memory_rwds), key= lambda t: t[1], reverse=True))
+        
         self.t += 1
 
         if len(memory_keys) == 0: return
+        if memory_rwds[0] == 0: return
 
         loss = []
 
@@ -209,9 +212,10 @@ class RegrScorer(Scorer):
     def __reduce__(self):
         return (type(self), self.args)
 
-    def predict(self, query_key, memory_keys):
+    def predict(self, query_key, memories):
 
-        values = []
+        memory_keys = [m[0] for m in memories]
+        values      = []
 
         for memory_key in memory_keys:
 
@@ -222,13 +226,16 @@ class RegrScorer(Scorer):
 
         return values
 
-    def update(self, query_key, memory_keys, r):
+    def update(self, query_key, memories, memory_rwds, prob):
+
+        memory_keys = [ mem[0] for mem in memories ]
+        memory_keys,memory_rwds = zip(*sorted(zip(memory_keys,memory_rwds), key= lambda t: t[1], reverse=True))
 
         self.t += 1
 
         if len(memory_keys) >= 1:
             base    = self.base.calculate_base(query_key, memory_keys[0]) # 0->1 where 1 is bad
-            example = self.example.make_example(self.vw, query_key, memory_keys[0], base, 1-r, 1) #0
+            example = self.example.make_example(self.vw, query_key, memory_keys[0], base, 0, 1) #0
             self.vw.learn(example)
             self.vw.finish_example(example)
 
@@ -267,7 +274,9 @@ class RankScorer(Scorer):
     def __reduce__(self):
         return (type(self), self.args)
 
-    def predict(self, query_key, memory_keys):
+    def predict(self, query_key, memories):
+
+        memory_keys = [m[0] for m in memories]
 
         values = []
 
@@ -279,21 +288,33 @@ class RankScorer(Scorer):
 
         return values
 
-    def update(self, query_key, memory_keys, r):
+    def update(self, query_key, memories, memory_rwds, prob):
+
+        # if less than 2 items are returned, there is no leaf update, because the ranking is determined
+        # what we need to do is compute the prediction error for each of the 2 items returned
+        # if the prediction error for the first item is the same as the prediction error for the second item, no update (!!!)
+        # if the prediction error for the first item is larger than the prediction error for the second item, update to prefer first > second
+        #    update importance can be the _absolute difference in prediction error_
+        # similarly, but the other way update to prefer second > first
+
+        if len(memories) < 2: return
+
+        memory_keys = [ mem[0] for mem in memories ]
+        memory_keys,memory_rwds = zip(*sorted(zip(memory_keys,memory_rwds), key= lambda t: t[1], reverse=True))
+
+        mem_0_advantage = memory_rwds[0] - memory_rwds[1]
 
         self.t += 1
 
-        if len(memory_keys) >= 1:
-            base    = 1-2*self.base.calculate_base(query_key, memory_keys[0])
-            example = self.example.make_example(self.vw, query_key, memory_keys[0], base, 1, r) #0
-            self.vw.learn(example)
-            self.vw.finish_example(example)
+        base    = 1-2*self.base.calculate_base(query_key, memory_keys[0])
+        example = self.example.make_example(self.vw, query_key, memory_keys[0], base, 1, mem_0_advantage/prob)
+        self.vw.learn(example)
+        self.vw.finish_example(example)
 
-        if len(memory_keys) >= 2:
-            base    = 1-2*self.base.calculate_base(query_key, memory_keys[1]) 
-            example = self.example.make_example(self.vw, query_key, memory_keys[1], base, -1, r) #1
-            self.vw.learn(example)
-            self.vw.finish_example(example)
+        base    = 1-2*self.base.calculate_base(query_key, memory_keys[1]) 
+        example = self.example.make_example(self.vw, query_key, memory_keys[1], base, -1, mem_0_advantage/prob)
+        self.vw.learn(example)
+        self.vw.finish_example(example)
 
     def __repr__(self) -> str:
         return f"rank{self.args}"
