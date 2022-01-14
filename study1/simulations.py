@@ -1,80 +1,81 @@
-import math
 
-from collections import defaultdict
-from numbers import Number
-from typing import Tuple, Iterable
+from typing import Tuple
 
 import numpy as np
 
-from coba.environments import LambdaSimulation, Interaction, EnvironmentFilter, SimulatedEnvironment
-from coba.registry import coba_registry_class
+from coba.encodings import OneHotEncoder
+from coba.environments import LambdaSimulation
 from coba.random import CobaRandom
 
-@coba_registry_class("bernoulli_flip")
-class BernoulliLabelNoise(EnvironmentFilter):
+class LocalSyntheticSimulation(LambdaSimulation):
+    """A simple simulation useful for debugging learning algorithms. 
 
-    def __init__(self, prob=0) -> None:
-        self._prob = prob
-        self._rng = CobaRandom(1)
-
-    @property
-    def params(self):
-        return {"flip": self._prob}
-
-    def filter(self, interactions: Iterable[Interaction]) -> Iterable[Interaction]:
-
-        for interaction in interactions:
-            if self._prob > 0 and self._rng.random() <= self._prob:
-                #we flip them all, otherwise the chance of us receiving
-                #receiving an error for a wrong action selection will be
-                #much lower than a right action selection
-                noised_labels = [ (1-r) for r in interaction.reveals]
-            else:
-                noised_labels = [r for r in interaction.reveals]
-
-            yield Interaction(interaction.context, interaction.actions, reveals=noised_labels, reward=interaction.reveals, **interaction.results)
-
-class MemorizableSimulation(SimulatedEnvironment):
+        The simulation's rewards are determined by the location of given context and action pairs with respect to a 
+        small set of pre-generated exemplar context,action pairs. Location is currently defined as equality though 
+        it could potentially be extended to support any number of metric based similarity kernels. The "local" in 
+        the name is due to its close relationship to 'local regression'.
+    """
 
     def __init__(self,
-        n_interactions:int = 1000,
-        n_features:int = 2,
-        n_context=3,
-        n_actions:int = 10,
-        seed:int = 1) -> None:
+        n_examples_per: int = 500,
+        n_contexts: int = 200,
+        n_context_feats: int = 2,
+        n_actions: int = 10,
+        seed: int = 1) -> None:
+        """Instantiate a LocalSyntheticSimulation.
 
-        self._n_interactions = n_interactions
-        self._n_features     = n_features
-        self._n_contexts      = n_context
-        self._n_actions      = n_actions
-        self._seed           = seed
+        Args:
+            n_interactions: The number of interactions the simulation should have.
+            n_contexts: The number of unique contexts the simulation should contain.
+            n_context_feats: The number of features each interaction context should have.
+            n_actions: The number of actions each interaction should have.
+            seed: The random number seed used to generate all contexts and action rewards.
+        """
+
+        self._n_interactions     = n_examples_per
+        self._n_context_features = n_context_feats
+        self._n_contexts         = n_contexts
+        self._n_actions          = n_actions
+        self._seed               = seed
+
+        rng = CobaRandom(self._seed)
+        np.random.seed(self._seed)
+
+        vec = np.random.randn(n_contexts, n_context_feats)
+        vec /= np.linalg.norm(vec, axis=0)
+
+        contexts = [ tuple(v) for v in vec ]
+        actions  = OneHotEncoder().fit_encodes(range(n_actions))
+        rewards  = {}
+
+        sim_contexts = []
+
+        for c in contexts:
+            sim_contexts.extend([c]*n_examples_per)
+
+        for context in contexts:
+            for action in actions:
+                rewards[(context,action)] = rng.random()
+
+        def context_generator(index:int, rng: CobaRandom):
+            return sim_contexts[index]
+
+        def action_generator(index:int, context:Tuple[float,...], rng: CobaRandom):
+            return actions
+
+        def reward_function(index:int, context:Tuple[float,...], action: Tuple[int,...], rng: CobaRandom):
+            return rewards[(context,action)]
+
+        return super().__init__(n_examples_per*n_contexts, context_generator, action_generator, reward_function, seed)
 
     @property
     def params(self):
-        return {"n_int": self._n_interactions, "n_feat": self._n_features, "n_ctx": self._n_contexts, "n_act": self._n_actions }
+        return { 
+            "n_A"    : self._n_actions,
+            "n_C"    : self._n_contexts,
+            "n_C_phi": self._n_context_features,
+            "seed"   : self._seed
+        }
 
-    def read(self) -> Iterable[Interaction]:
-
-        rng = CobaRandom(self._seed)
-
-        #contexts = [ HashableDict(enumerate(rng.randoms(self._n_features))) for _ in range(self._n_contexts) ]
-        contexts = [ tuple(rng.randoms(self._n_features)) for _ in range(self._n_contexts) ]
-        
-        actions  = [ tuple(l) for l in np.eye(self._n_actions).astype(int)]
-        rewards  = defaultdict(int)
-
-        for context in contexts: rewards[(context,rng.choice(actions))] = 1
-
-        def context_generator(index:int):
-            return rng.choice(contexts)
-
-        def action_generator(index:int, context:Tuple[float,...]):
-            return actions
-
-        def reward_function(index:int, context:Tuple[float,...], action: Tuple[int,...]):
-            return rewards[(context,action)]
-
-        return LambdaSimulation(self._n_interactions, context_generator, action_generator, reward_function).read()
-
-    def __repr__(self):
-        return f"Memorizable{self.params}".replace("{","(").replace("}",")")
+    def __str__(self) -> str:
+        return f"LocalSynth(A={self._n_actions},C={self._n_contexts},c={self._n_context_features},seed={self._seed})"
