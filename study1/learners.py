@@ -42,11 +42,7 @@ class MemorizedLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 
-            'family': 'memorized_taken',
-            'e':self._epsilon,
-            **self._cmt.params,
-        }
+        return { 'family': 'memorized_taken','e':self._epsilon, **self._cmt.params }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -91,7 +87,7 @@ class MemorizedLearner:
 
         memory_key = MemoryKey(context, action)
 
-        self._cmt.update(key=memory_key, outcome=reward)
+        self._cmt.update(query_key=memory_key, outcome=reward)
         self._cmt.insert(key=memory_key, value=reward)
 
         self._times[1] += time.time()-learn_start

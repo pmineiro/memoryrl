@@ -13,7 +13,7 @@ class Router(ABC):
         ...
     
     @abstractmethod
-    def update(self, x, y, weight):
+    def update(self, query_key, label, weight):
         ...
 
 class RouterFactory(ABC):
@@ -37,17 +37,15 @@ class LogisticRouter(RouterFactory):
             
             return value
 
-        def update(self, query_key, left_err, right_err):
+        def update(self, query_key, label, weight):
             self.t += 1
 
-            update_label = -1 if left_err < right_err else 1
-
-            example = self._make_example(query_key, update_label)
+            example = self._make_example(query_key, label, weight)
             self.vw.learn(example)
             self.vw.finish_example(example)
 
         def _make_example(self, query_key, label=None, weight=1) -> pyvw.example:
-            
+
             context = list(Flatten().filter([list(query_key.context)]))[0]
             action  = list(Flatten().filter([list(query_key.action)]))[0]
 
@@ -55,7 +53,7 @@ class LogisticRouter(RouterFactory):
             a = VowpalMediator.prep_features(action)
 
             ex = pyvw.example(self.vw, {"x": x, "a": a})
-    
+
             if label is not None:
                 ex.set_label_string(f"{label} {weight}")
 

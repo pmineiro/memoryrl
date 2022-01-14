@@ -122,19 +122,20 @@ class CMT:
     def query(self, key) -> MemVal:
         return self.__query(key) 
 
-    def update(self, key: MemKey, outcome: float) -> None:
+    def update(self, query_key: MemKey, outcome: float) -> None:
 
         assert 0 <= outcome <= 1
 
-        query_path, query_pred = self.__query(key)
+        query_path, query_pred = self.__query(query_key)
 
         if query_pred is None: return
 
         for i in range(len(query_path)):
 
-            if query_path[i].is_leaf:                
-                key_and_pred_err = [ (k, (outcome-v)**2) for k,v in query_path[i].memories.items() ]
-                self.f.update(key, *zip(*key_and_pred_err))
+            if query_path[i].is_leaf:
+                
+                mem_keys, mem_errs = zip(*[ (k, (outcome-v)**2) for k,v in query_path[i].memories.items() ])
+                self.f.update(query_key, mem_keys, mem_errs)
 
             else:
 
@@ -142,16 +143,20 @@ class CMT:
                 next_node = query_path[i+1]
 
                 alternate_node = this_node.left if this_node.right is next_node else this_node.right
-                alternate_pred = list(self.__path(key,alternate_node))[-1].top(key, self.f)
+                alternate_pred = list(self.__path(query_key,alternate_node))[-1].top(query_key, self.f)
+
+                assert (this_node.left is next_node) or (this_node.right is next_node)
+                assert (this_node.left is alternate_node) or (this_node.right is alternate_node)
+                assert alternate_node is not next_node
 
                 left_pred  = query_pred if this_node.left  is next_node else alternate_pred
                 right_pred = query_pred if this_node.right is next_node else alternate_pred
 
                 #???? When one side is empty do I learn nothing or strengthen the non-empty side
-                left_pred_err  = (outcome-left_pred)**2 if left_pred is not None else 1
-                right_pred_err = (outcome-right_pred)**2 if right_pred is not None else 1
+                left_pred_err  = (outcome-left_pred)**2
+                right_pred_err = (outcome-right_pred)**2
 
-                self.__update_g(key, left_pred_err, right_pred_err, this_node)
+                self.__update_g(query_key, left_pred_err, right_pred_err, this_node)
 
         for _ in range(self.d):
             self.__reroute()
@@ -267,8 +272,9 @@ class CMT:
         assert 0 <= right_err and right_err <=1
 
         balance_diff = log(1e-2 + v.left.n) - log(1e-2 + v.right.n)
-        
         error_diff   = left_err-right_err
 
         label = 1 if (1-self.alpha) * error_diff + self.alpha * balance_diff > 0 else -1
-        v.g.update(key, label, abs(error_diff))
+        
+        if error_diff != 0:
+            v.g.update(key, label, abs(error_diff))
