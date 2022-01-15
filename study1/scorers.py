@@ -21,17 +21,16 @@ class Scorer(ABC):
 
 class RankScorer(Scorer):
 
-    def __init__(self, power_t=0, interactions=[]):
-
-        I = " ".join(f"--interactions {i}" for i in interactions)
-
-        self.vw = pyvw.vw(f'--quiet -b {bits} --power_t {power_t} --noconstant --loss_function squared --min_prediction 0 --max_prediction 1 {I}')
+    def __init__(self, power_t:int=0, X: Sequence[str]=[]):
+        
+        interactions = " ".join(f"--interactions {x}" for x in X)
+        self.vw = pyvw.vw(f'--quiet -b {bits} --power_t {power_t} --noconstant --loss_function squared --min_prediction 0 --max_prediction 1 {interactions}')
 
         self.t       = 0
         self.power_t = power_t
         self.rng     = CobaRandom(1)
 
-        self.args = (power_t,interactions)
+        self.args = (power_t,X)
         self.stop = False
 
     def __reduce__(self):
@@ -93,8 +92,8 @@ class RankScorer(Scorer):
 
     def _diff_features(self, x1, x2):
         
-        x1 = list(Flatten().filter([list(x1)]))[0]
-        x2 = list(Flatten().filter([list(x2)]))[0]
+        x1 = x1
+        x2 = x2
 
         if isinstance(x1,dict) and isinstance(x2,dict):
             return { k:abs(x1.get(k,0)-x2.get(k,0)) for k in x1.keys() | x2.keys() }
@@ -118,7 +117,10 @@ class RankScorer(Scorer):
         return example
 
     def __repr__(self) -> str:
-        return f"rank{self.args}"
+        if not self.args[1]:
+            return f"rank({self.args[0]})"
+        else:
+            return f"rank{self.args}"
 
     def __str__(self) -> str:
         return self.__repr__()

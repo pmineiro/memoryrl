@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
+from typing import Sequence
 
 from vowpalwabbit import pyvw
 from coba.learners.vowpal import VowpalMediator
-from coba.pipes import Flatten
 
 bits = 20
 
@@ -26,9 +26,10 @@ class LogisticRouter(RouterFactory):
 
     class _Router(Router):
 
-        def __init__(self, power_t):
-            self.t       = 0
-            self.vw      = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t {power_t} --link=glf1')
+        def __init__(self, power_t=0, X = []):
+            self.t  = 0
+            interactions = " ".join(f"--interactions {x}" for x in X)
+            self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t {power_t} --link=glf1 {interactions}')
 
         def predict(self, query_key):
             example = self._make_example(query_key)
@@ -46,8 +47,8 @@ class LogisticRouter(RouterFactory):
 
         def _make_example(self, query_key, label=None, weight=1) -> pyvw.example:
 
-            context = list(Flatten().filter([list(query_key.context)]))[0]
-            action  = list(Flatten().filter([list(query_key.action)]))[0]
+            context = query_key.context
+            action  = query_key.action
 
             x = VowpalMediator.prep_features(context)
             a = VowpalMediator.prep_features(action)
@@ -59,11 +60,15 @@ class LogisticRouter(RouterFactory):
 
             return ex
 
-    def __init__(self, power_t:float=0) -> None:
+    def __init__(self, power_t:float=0, X:Sequence[str] = []) -> None:
         self._power_t = power_t
+        self._X = X
 
     def __call__(self) -> _Router:
-        return LogisticRouter._Router(self._power_t)
+        return LogisticRouter._Router(self._power_t, self._X)
 
     def __str__(self) -> str:
-        return f"vw(power_t={self._power_t})"
+        if self._X:
+            return f"vw({self._power_t},{self._X})"
+        else:
+            return f"vw({self._power_t})"

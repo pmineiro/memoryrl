@@ -8,6 +8,7 @@ from typing import Hashable, Sequence, Dict, Any
 from memory import CMT
 
 from coba.contexts import LearnerContext
+from coba.encodings import InteractionsEncoder
 
 logn = 500
 bits = 20
@@ -16,8 +17,8 @@ class MemoryKey:
 
     def __init__(self, context, action) -> None:
 
-        self.context  = context
-        self.action   = action
+        self.context  = InteractionsEncoder(["x"]).encode(x=context)
+        self.action   = InteractionsEncoder(["a"]).encode(a=action)
 
         self._hash = hash((context,action))
 
@@ -29,15 +30,14 @@ class MemoryKey:
 
 class MemorizedLearner:
 
-    def __init__(self, 
-        epsilon: float,
-        cmt    : CMT) -> None:
+    def __init__(self, epsilon: float, cmt: CMT) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 
         self._epsilon = epsilon
         self._i       = 0
         self._cmt     = cmt
+        self._every   = every
         self._times   = [0, 0]
 
     @property
@@ -87,7 +87,7 @@ class MemorizedLearner:
 
         memory_key = MemoryKey(context, action)
 
-        self._cmt.update(query_key=memory_key, outcome=reward)
+        self._cmt.update(key=memory_key, outcome=reward)
         self._cmt.insert(key=memory_key, value=reward)
 
         self._times[1] += time.time()-learn_start
