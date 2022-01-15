@@ -29,8 +29,8 @@ if __name__ == '__main__':
 
    Xs     = [ [], ["xa"], ["xa","xxa"] ]
    cs     = [ ConstSplitter(100), ConstSplitter(120), LogSplitter(17), LogSplitter(20) ]
-   ds     = [ 1, 2, 4 ]
-   alphas = [ .25, .5, .75 ]
+   ds     = [ 1, 2 ]
+   alphas = [ .5, .75 ]
 
    learners = [
       VowpalEpsilonLearner(epsilon=epsilon, power_t=0)
