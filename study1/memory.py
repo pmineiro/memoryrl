@@ -189,7 +189,7 @@ class CMT:
             assert leaf.n == len(leaf.memories)
 
         else:
-            print("SPLITTING")
+            # print("SPLITTING")
             self.splitting = True
 
             new_parent       = leaf

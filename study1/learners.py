@@ -37,7 +37,6 @@ class MemorizedLearner:
         self._epsilon = epsilon
         self._i       = 0
         self._cmt     = cmt
-        self._every   = every
         self._times   = [0, 0]
 
     @property

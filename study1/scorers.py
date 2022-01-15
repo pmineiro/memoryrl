@@ -31,7 +31,6 @@ class RankScorer(Scorer):
         self.rng     = CobaRandom(1)
 
         self.args = (power_t,X)
-        self.stop = False
 
     def __reduce__(self):
         return (type(self), self.args)
@@ -45,15 +44,11 @@ class RankScorer(Scorer):
             values.append(self.vw.predict(example))
             self.vw.finish_example(example)
 
-        if len(memory_keys) == 200 and not self.stop:
-            print("All Memories")
-            self.stop = True
+        # if query_key in memory_keys and len([v for v in values if v == 0]) == 1:
+        #     assert memory_keys.index(query_key) == values.index(0)
 
-        if query_key in memory_keys and len([v for v in values if v == 0]) == 1:
-            assert memory_keys.index(query_key) == values.index(0)
-
-        if query_key in memory_keys and len([v for v in values if v == 0]) > 1:
-            print(f"interesting {len([v for v in values if v == 0])} {self.t} {len([ self.vw.get_weight(i) for i in reversed(range(self.vw.num_weights())) if self.vw.get_weight(i) < 0])}")
+        # if query_key in memory_keys and len([v for v in values if v == 0]) > 1:
+        #     print(f"interesting {len([v for v in values if v == 0])} {self.t} {len([ self.vw.get_weight(i) for i in reversed(range(self.vw.num_weights())) if self.vw.get_weight(i) < 0])}")
 
         return values
 
