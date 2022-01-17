@@ -26,13 +26,14 @@ class LogisticRouter(RouterFactory):
 
     class _Router(Router):
 
-        def __init__(self, power_t=0, X = []):
+        def __init__(self, power_t, X, coin):
             self.t  = 0
             interactions = " ".join(f"--interactions {x}" for x in X)
-            self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic --noconstant --power_t {power_t} --link=glf1 {interactions}')
+            coin_flag    = "--coin" if coin else ""
+            self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic {coin_flag} --noconstant --power_t {power_t} --link=glf1 {interactions}')
 
         def predict(self, query_key):
-            example = self._make_example(query_key)
+            example = self._make_example(query_key, None, None)
             value = self.vw.predict(example)
             self.vw.finish_example(example)
             
@@ -45,7 +46,7 @@ class LogisticRouter(RouterFactory):
             self.vw.learn(example)
             self.vw.finish_example(example)
 
-        def _make_example(self, query_key, label=None, weight=1) -> pyvw.example:
+        def _make_example(self, query_key, label, weight) -> pyvw.example:
 
             context = query_key.context
             action  = query_key.action
@@ -60,15 +61,13 @@ class LogisticRouter(RouterFactory):
 
             return ex
 
-    def __init__(self, power_t:float=0, X:Sequence[str] = []) -> None:
+    def __init__(self, power_t:float, X:Sequence[str], coin:bool) -> None:
         self._power_t = power_t
         self._X = X
+        self._coin = coin
 
     def __call__(self) -> _Router:
-        return LogisticRouter._Router(self._power_t, self._X)
+        return LogisticRouter._Router(self._power_t, self._X, self._coin)
 
     def __str__(self) -> str:
-        if self._X:
-            return f"vw({self._power_t},{self._X})"
-        else:
-            return f"vw({self._power_t})"
+        return f"vw({self._power_t},{self._X},{self._coin})"

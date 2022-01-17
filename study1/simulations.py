@@ -32,6 +32,8 @@ class LocalSyntheticSimulation(LambdaSimulation):
             seed: The random number seed used to generate all contexts and action rewards.
         """
 
+        self.args = (n_examples_per, n_contexts, n_context_feats, n_actions, seed)
+
         self._n_interactions     = n_examples_per
         self._n_context_features = n_context_feats
         self._n_contexts         = n_contexts
@@ -79,3 +81,6 @@ class LocalSyntheticSimulation(LambdaSimulation):
 
     def __str__(self) -> str:
         return f"LocalSynth(A={self._n_actions},C={self._n_contexts},c={self._n_context_features},seed={self._seed})"
+
+    def __reduce__(self) -> Tuple[object, ...]:
+        return (LocalSyntheticSimulation, self.args)

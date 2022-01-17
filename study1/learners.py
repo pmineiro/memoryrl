@@ -77,16 +77,18 @@ class MemorizedLearner:
         min_p = self._epsilon / len(actions)
         grd_p = (1-self._epsilon)/len(greedy_A)
         
-        return [ grd_p+min_p if a in greedy_A else min_p for a in actions ]
+        return [ grd_p+min_p if a in greedy_A else min_p for a in actions ], len(actions)
 
     def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, predict_info: Any) -> None:
         """Learn about the result of an action that was taken in a context."""
 
         learn_start = time.time()
 
+        n_actions = predict_info
+
         memory_key = MemoryKey(context, action)
 
-        self._cmt.update(key=memory_key, outcome=reward)
-        self._cmt.insert(key=memory_key, value=reward)
+        self._cmt.update(key=memory_key, outcome=reward, weight=1/(n_actions*probability))
+        self._cmt.insert(key=memory_key, value=reward, weight=1/(n_actions*probability))
 
         self._times[1] += time.time()-learn_start

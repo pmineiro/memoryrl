@@ -40,7 +40,7 @@ class CMT:
 
             keys   = list(self.memories.keys())
             scores = f.predict(x, keys)
-            sort   = sorted(zip(keys,scores), key=lambda t: (t[1], CMT.Node.rng.random()))
+            sort   = sorted(zip(keys,scores), key=lambda t: (t[1], Random(1).random()))
 
             return self.memories[sort[0][0]]
 
@@ -77,44 +77,39 @@ class CMT:
     def query(self, key) -> MemVal:
         return self.__query(key) 
 
-    def update(self, key: MemKey, outcome: float) -> None:
+    def update(self, key: MemKey, outcome: float, weight: float) -> None:
 
         assert 0 <= outcome <= 1
+        assert 0 <= weight
 
         query_path, query_pred = self.__query(key)
 
         if query_pred is None: return
 
-        for i in range(len(query_path)):
+        #update leaf
+        mem_key_err_pairs = [ (k, (outcome-v)**2) for k,v in query_path[-1].memories.items() ]
+        mem_keys, mem_errs = zip(*mem_key_err_pairs)
+        self.f.update(key, mem_keys, mem_errs, weight)
 
-            if query_path[i].is_leaf:
-                
-                mem_keys, mem_errs = zip(*[ (k, (outcome-v)**2) for k,v in query_path[i].memories.items() ])
-                self.f.update(key, mem_keys, mem_errs)
+        #update routers
+        for this_node, next_node in zip(query_path, query_path[1:]):
 
-            else:
+            alternate_node = this_node.left if this_node.right is next_node else this_node.right
+            alternate_pred = list(self.__path(key,alternate_node))[-1].top(key, self.f)
 
-                this_node = query_path[i  ]
-                next_node = query_path[i+1]
+            assert (this_node.left is next_node) or (this_node.right is next_node)
+            assert (this_node.left is alternate_node) or (this_node.right is alternate_node)
+            assert alternate_node is not next_node
 
-                alternate_node = this_node.left if this_node.right is next_node else this_node.right
-                alternate_pred = list(self.__path(key,alternate_node))[-1].top(key, self.f)
+            left_pred  = query_pred if this_node.left  is next_node else alternate_pred
+            right_pred = query_pred if this_node.right is next_node else alternate_pred
 
-                assert (this_node.left is next_node) or (this_node.right is next_node)
-                assert (this_node.left is alternate_node) or (this_node.right is alternate_node)
-                assert alternate_node is not next_node
+            left_pred_err  = (outcome-left_pred)**2
+            right_pred_err = (outcome-right_pred)**2
 
-                left_pred  = query_pred if this_node.left  is next_node else alternate_pred
-                right_pred = query_pred if this_node.right is next_node else alternate_pred
+            self.__update_g(key, left_pred_err, right_pred_err, this_node, weight)
 
-                #???? When one side is empty do I learn nothing or strengthen the non-empty side
-                left_pred_err  = (outcome-left_pred)**2
-                right_pred_err = (outcome-right_pred)**2
-
-                self.__update_g(key, left_pred_err, right_pred_err, this_node)
-
-        for _ in range(self.d):
-            self.__reroute()
+        self.__reroute()
 
     def delete(self, key: MemKey):
         assert key in self.leaf_by_key # deleting something not in the memory ...
@@ -152,7 +147,7 @@ class CMT:
             assert v.n >= 0
             v = v.parent
 
-    def insert(self, key: MemKey, value: MemVal, v: 'CMT.Node'=None):
+    def insert(self, key: MemKey, value: MemVal, weight: float, *, v: 'CMT.Node'=None):
 
         if key in self.leaf_by_key: return
 
@@ -164,17 +159,16 @@ class CMT:
 
             left_error  = 1 if v.g.predict(key) > 0 else 0
             right_error = 1-left_error
-            self.__update_g(key, left_error, right_error, v)
+            self.__update_g(key, left_error, right_error, v, weight)
 
             v = v.right if v.g.predict(key) > 0 else v.left
 
-        self.__insertLeaf(key, value, v)
+        self.__insertLeaf(key, value, v, weight)
 
         if not self.rerouting and not self.splitting:
-            for _ in range(self.d):
-                self.__reroute()
+            self.__reroute()
 
-    def __insertLeaf(self, key: MemKey, val: MemVal, leaf: 'CMT.Node'):
+    def __insertLeaf(self, key: MemKey, val: MemVal, leaf: 'CMT.Node', weight: float):
 
         assert leaf.is_leaf
 
@@ -189,7 +183,7 @@ class CMT:
             assert leaf.n == len(leaf.memories)
 
         else:
-            # print("SPLITTING")
+            #print("SPLITTING")
             self.splitting = True
 
             new_parent       = leaf
@@ -201,29 +195,32 @@ class CMT:
             self.nodes.append(new_parent.left)
             self.nodes.append(new_parent.right)
 
-            to_insert = list(new_parent.memories.items()) + [ (key,val) ]
+            to_insert = list(new_parent.memories.items())
             new_parent.memories.clear()
 
             for mem_key, mem_val in to_insert:
                 self.leaf_by_key.pop(mem_key,None)
-                self.insert(mem_key, mem_val, new_parent)
+                self.insert(mem_key, mem_val, 1, v=new_parent)
 
-            self.insert(key, val, new_parent)
+            self.insert(key, val, weight, v=new_parent)
             self.splitting = False
 
         if not self.splitting:
             mem_keys = self.leaf_by_key[key].memories.keys()
             mem_errs = [ 0 if k == key else 1 for k in mem_keys]
-            self.f.update(key, mem_keys, mem_errs)
+            self.f.update(key, mem_keys, mem_errs, weight)
 
     def __reroute(self):
-        if self.leaf_by_key:
+
+        _d = self.d if self.d > 1 else 1 if self.rng.random() < self.d else 0
+
+        for _ in range(_d):
             x = self.rng.choice(list(self.leaf_by_key.keys()))
             o = self.leaf_by_key[x].memories[x]
-            
+
             self.rerouting = True
             self.delete(x)
-            self.insert(x, o)
+            self.insert(x, o, 1)
             self.rerouting = False
 
     def __path(self, key: MemKey, node: 'CMT.Node') -> Iterable['CMT.Node']:
@@ -237,7 +234,7 @@ class CMT:
         query_pred = query_path[-1].top(key, self.f)        
         return query_path, query_pred
 
-    def __update_g(self, key: MemKey,  left_err: float, right_err: float, v: 'CMT.Node'):
+    def __update_g(self, key: MemKey,  left_err: float, right_err: float, v: 'CMT.Node', weight: float):
 
         assert 0 <= left_err and left_err <=1
         assert 0 <= right_err and right_err <=1
@@ -248,4 +245,4 @@ class CMT:
         label = 1 if (1-self.alpha) * error_diff + self.alpha * balance_diff > 0 else -1
         
         if error_diff != 0:
-            v.g.update(key, label, abs(error_diff))
+            v.g.update(key, label, weight*abs(error_diff))
