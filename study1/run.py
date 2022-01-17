@@ -21,29 +21,29 @@ from coba.learners     import VowpalEpsilonLearner, CorralLearner
 
 experiment = 'full6'
 json       = f"./study1/experiments/{experiment}.json"
-log        = f"./study1/outcomes/full6_19.log.gz"
-config     = {"processes": 8, "chunk_by":'task' }
+log        = None#f"./study1/outcomes/full6_19.log.gz"
+config     = {"processes": 1, "maxchunksperchild": 1, "chunk_by":'task' }
 
 epsilon      = 0.1
 
 if __name__ == '__main__':
 
    Xs      = [ ["xa", "xxa"] ]
-   cs      = [ LogSplitter(26), LogSplitter(29) ]
-   ds      = [ .25, .5, 1 ]
+   cs      = [ ConstSplitter(10) ] #LogSplitter(29)
+   ds      = [ 1 ]
    alphas  = [ .25 ]
    init_ws = [ 1 ]
-   coins   = [ True, False]
+   coins   = [ True ]
 
    learners = [
-      VowpalEpsilonLearner(epsilon=epsilon, power_t=0, interactions=["xa"])
+      VowpalEpsilonLearner(epsilon=epsilon, power_t=0)
    ]
 
    for c, d, alpha, X, w, coin in itertools.product(cs,ds,alphas, Xs, init_ws, coins):
       learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,X,coin), RankScorer(0,X,w,coin), c=c, d=d, alpha=alpha)))
 
-   #environments = Environments([LocalSyntheticSimulation(20, n_context_feats=2, n_actions=2, n_contexts=50)]).binary().shuffle(range(1))
+   environments = Environments([LocalSyntheticSimulation(20, n_context_feats=2, n_actions=2, n_contexts=50)]).binary().shuffle(range(1))
    #environments = Environments.from_linear_synthetic(1000, n_context_features=10, n_actions=2).binary().shuffle(range(2))
-   environments = Environments.from_file(json)
+   #environments = Environments.from_file(json)
 
    Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=FinalPrintEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners(span=200)

@@ -13,10 +13,12 @@ Memory = Tuple[MemKey,MemVal]
 class CMT:
 
     class Node:
-        def __init__(self, parent:'CMT.Node'):
+        def __init__(self, parent:'CMT.Node', rng: Random):
             self.parent = parent
 
             self.memories: Dict[MemKey,MemVal] = {}
+
+            self.rng = rng
 
             self.n     = 0
             self.left  = None
@@ -40,7 +42,7 @@ class CMT:
 
             keys   = list(self.memories.keys())
             scores = f.predict(x, keys)
-            sort   = sorted(zip(keys,scores), key=lambda t: (t[1], Random(1).random()))
+            sort   = sorted(zip(keys,scores), key=lambda t: (t[1], self.rng))
 
             return self.memories[sort[0][0]]
 
@@ -61,8 +63,7 @@ class CMT:
         self.d         = d
         self.rng       = rng
 
-        CMT.Node.rng = rng
-        self.root = CMT.Node(None)
+        self.root = CMT.Node(None, rng)
 
         self.leaf_by_key: Dict[MemKey,CMT.Node] = {}
         self.nodes: List[CMT.Node] = [self.root]
@@ -92,22 +93,22 @@ class CMT:
         self.f.update(key, mem_keys, mem_errs, weight)
 
         #update routers
-        for this_node, next_node in zip(query_path, query_path[1:]):
+        for curr_node, next_node in zip(query_path, query_path[1:]):
 
-            alternate_node = this_node.left if this_node.right is next_node else this_node.right
+            alternate_node = curr_node.left if curr_node.right is next_node else curr_node.right
             alternate_pred = list(self.__path(key,alternate_node))[-1].top(key, self.f)
 
-            assert (this_node.left is next_node) or (this_node.right is next_node)
-            assert (this_node.left is alternate_node) or (this_node.right is alternate_node)
+            assert (curr_node.left is next_node) or (curr_node.right is next_node)
+            assert (curr_node.left is alternate_node) or (curr_node.right is alternate_node)
             assert alternate_node is not next_node
 
-            left_pred  = query_pred if this_node.left  is next_node else alternate_pred
-            right_pred = query_pred if this_node.right is next_node else alternate_pred
+            left_pred  = query_pred if curr_node.left  is next_node else alternate_pred
+            right_pred = query_pred if curr_node.right is next_node else alternate_pred
 
             left_pred_err  = (outcome-left_pred)**2
             right_pred_err = (outcome-right_pred)**2
 
-            self.__update_g(key, left_pred_err, right_pred_err, this_node, weight)
+            self.__update_g(key, left_pred_err, right_pred_err, curr_node, weight)
 
         self.__reroute()
 
@@ -183,12 +184,11 @@ class CMT:
             assert leaf.n == len(leaf.memories)
 
         else:
-            #print("SPLITTING")
             self.splitting = True
 
             new_parent       = leaf
-            new_parent.left  = CMT.Node(new_parent)
-            new_parent.right = CMT.Node(new_parent)
+            new_parent.left  = CMT.Node(new_parent, self.rng)
+            new_parent.right = CMT.Node(new_parent, self.rng)
             new_parent.n     = 0
             new_parent.g     = self.g_factory()
 
