@@ -103,8 +103,9 @@ class RankScorer(Scorer):
         x = VowpalMediator.prep_features(self._diff_features(query_key.context, memory_key.context))
 
         example = pyvw.example(self.vw, {'x': x, 'a': a})
-        base = self._cos_dist(query_key, memory_key)
-        
+        #base = self._cos_dist(query_key, memory_key)
+        base = 0
+
         assert 0 <= base and base <= 1
 
         example.set_label_string(f"{label or ''} {1 if weight is None else weight} {base}")
@@ -153,51 +154,3 @@ class RandomScorer(Scorer):
 
     def __str__(self) -> str:
         return self.__repr__()
-
-class BaseMetric:
-
-    def __init__(self, base="none"):
-
-        assert base in ["none", "l1", "l2", "l2^2", "cos", "exp"]
-
-        self.base = base
-
-    def calculate_base(self, query_context, mem_context):
-        if self.base == "none":
-            return 0
-
-        x1 = query_context.features
-        x2 = mem_context.features
-
-        if self.base == "cos":
-            n1 = self._norm(x1,"l2")
-            n2 = self._norm(x2,"l2")
-            return (1-self._dot(x1,x2)/(n1*n2))/2
-
-        if self.base == "exp":
-            return 1-math.exp(-self._metric(x1,x2,"l1"))
-
-        return self._metric(x1,x2,self.base)
-
-
-
-    def _metric(self,x1,x2,d):
-        
-        if isinstance(x1,dict) and isinstance(x2,dict):
-            vs = [x1.get(k,0)-x2.get(k,0) for k in (x1.keys() | x2.keys())]
-        else:
-            vs = [i-j for i,j in zip(x1,x2)]
-
-        return self._norm(vs,d)
-
-    def _dot(self,x1,x2):
-        if isinstance(x1,dict) and isinstance(x2,dict):
-            return sum([x1[k]*x2[k] for k in (x1.keys() & x2.keys())])
-        else:
-            return sum([i*j for i,j in zip(x1,x2)])
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def __str__(self) -> str:
-        return f"base({self.base})"

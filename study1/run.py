@@ -29,11 +29,11 @@ epsilon      = 0.1
 if __name__ == '__main__':
 
    Xs      = [ ["xa", "xxa"] ]
-   cs      = [ ConstSplitter(10) ] #LogSplitter(29)
-   ds      = [ 1 ]
+   cs      = [ LogSplitter(29) ]
+   ds      = [ .25, .5, 1 ]
    alphas  = [ .25 ]
    init_ws = [ 1 ]
-   coins   = [ True ]
+   coins   = [ True, False ]
 
    learners = [
       VowpalEpsilonLearner(epsilon=epsilon, power_t=0)
@@ -46,4 +46,4 @@ if __name__ == '__main__':
    #environments = Environments.from_linear_synthetic(1000, n_context_features=10, n_actions=2).binary().shuffle(range(2))
    #environments = Environments.from_file(json)
 
-   Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=FinalPrintEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners(span=200)
+   Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=FinalPrintEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()
