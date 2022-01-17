@@ -21,8 +21,8 @@ from coba.learners     import VowpalEpsilonLearner, CorralLearner
 
 experiment = 'full6'
 json       = f"./study1/experiments/{experiment}.json"
-log        = None#f"./study1/outcomes/full6_19.log.gz"
-config     = {"processes": 1, "maxchunksperchild": 1, "chunk_by":'task' }
+log        = None#f"./study1/outcomes/full6_20.log.gz"
+config     = {"processes": 1, "chunk_by":'task' }
 
 epsilon      = 0.1
 
