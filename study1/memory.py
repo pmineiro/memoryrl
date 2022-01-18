@@ -145,8 +145,6 @@ class CMT:
                     self.nodes.pop(self.nodes.index(v))
                     self.nodes.pop(self.nodes.index(null_child))
 
-                    v = v.parent
-
             assert v.n >= 0
             v = v.parent
 
@@ -186,8 +184,10 @@ class CMT:
             assert leaf.n == len(leaf.memories)
 
         else:
-            print("SPLITTING")
-            self.splitting = True
+            self.splitting   = True
+
+            to_insert = list(leaf.memories.items())
+            leaf.memories.clear()
 
             new_parent       = leaf
             new_parent.left  = CMT.Node(new_parent, self.rng)
@@ -197,9 +197,6 @@ class CMT:
 
             self.nodes.append(new_parent.left)
             self.nodes.append(new_parent.right)
-
-            to_insert = list(new_parent.memories.items())
-            new_parent.memories.clear()
 
             for mem_key, mem_val in to_insert:
                 self.leaf_by_key.pop(mem_key,None)

@@ -42,9 +42,7 @@ class RankScorer(Scorer):
         values = []
 
         for memory_key in memory_keys:
-            example = self._make_example(query_key, memory_key, None, None)
-            values.append(self.vw.predict(example))
-            self.vw.finish_example(example)
+            values.append(self.vw.predict(self._make_example(query_key, memory_key, None, None)))
 
         # if query_key in memory_keys and len([v for v in values if v == 0]) == 1:
         #     assert memory_keys.index(query_key) == values.index(0)
@@ -108,7 +106,7 @@ class RankScorer(Scorer):
 
         assert 0 <= base and base <= 1
 
-        example.set_label_string(f"{label or ''} {1 if weight is None else weight} {base}")
+        example.set_label_string(f"{'' if label is None else label} {1 if weight is None else weight} {base}")
         
         #example.get_feature_number()
         #list(example.iter_features())

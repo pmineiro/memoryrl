@@ -51,6 +51,7 @@ class LocalSyntheticSimulation(LambdaSimulation):
         rewards  = {}
 
         sim_contexts = []
+        sim_rewards  = {}
 
         for c in contexts:
             sim_contexts.extend([c]*n_examples_per)
@@ -58,15 +59,19 @@ class LocalSyntheticSimulation(LambdaSimulation):
         for context in contexts:
             for action in actions:
                 rewards[(context,action)] = rng.random()
+        
+        for i,c in enumerate(sim_contexts):
+            for action in actions:
+                sim_rewards[(i,action)] = rewards[(c,action)]
 
         def context_generator(index:int, rng: CobaRandom):
-            return sim_contexts[index]
+            return tuple([ c + 0.1*rng.random() for c in sim_contexts[index] ])
 
         def action_generator(index:int, context:Tuple[float,...], rng: CobaRandom):
             return actions
 
         def reward_function(index:int, context:Tuple[float,...], action: Tuple[int,...], rng: CobaRandom):
-            return rewards[(context,action)]
+            return sim_rewards[(index,action)]
 
         return super().__init__(n_examples_per*n_contexts, context_generator, action_generator, reward_function, seed)
 

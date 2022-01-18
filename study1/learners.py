@@ -17,10 +17,9 @@ class MemoryKey:
 
     def __init__(self, context, action) -> None:
 
-        self.context  = InteractionsEncoder(["x"]).encode(x=context)
-        self.action   = InteractionsEncoder(["a"]).encode(a=action)
-
-        self._hash = hash((context,action))
+        self.context = InteractionsEncoder(["x"]).encode(x=context)
+        self.action  = InteractionsEncoder(["a"]).encode(a=action)
+        self._hash   = hash((context,action))
 
     def __hash__(self) -> int:
         return self._hash
