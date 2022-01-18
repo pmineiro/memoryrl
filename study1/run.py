@@ -43,9 +43,9 @@ if __name__ == '__main__':
    for c, d, alpha, X, w, coin, weight in itertools.product(cs,ds,alphas, Xs, init_ws, coins, weights):
       learners.append(MemorizedLearner(epsilon, weight, CMT(6000, LogisticRouter(0,X,coin), RankScorer(0,X,w,coin), c=c, d=d, alpha=alpha)))
 
-   #environments = Environments([LocalSyntheticSimulation(20, n_context_feats=2, n_actions=2, n_contexts=50)]).binary().shuffle(range(1))
+   environments = Environments([LocalSyntheticSimulation(20, n_context_feats=2, n_actions=2, n_contexts=50)]).binary().shuffle(range(1))
    #environments = Environments.from_linear_synthetic(1000, n_context_features=10, n_actions=2).binary().shuffle(range(2))
    #environments1 = Environments.from_file(json)
-   environments = Environments.from_openml(120, take=6000, cat_as_str=True).scale("min","minmax").shuffle([100])
+   #environments = Environments.from_openml(120, take=6000, cat_as_str=True).scale("min","minmax").shuffle([100])
 
    Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=FinalPrintEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners(xlim=(300,6000))

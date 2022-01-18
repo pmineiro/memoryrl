@@ -1,10 +1,12 @@
 from math   import log
-from typing import Dict, Any, Tuple, Hashable, Iterable, List, Callable
+from typing import Dict, Any, Tuple, Hashable, Iterable, List
 
 from routers import RouterFactory
 from scorers import Scorer
 from random  import Random
 from splitters import Splitter
+
+from coba.random import CobaRandom
 
 MemKey = Hashable
 MemVal = Any
@@ -42,7 +44,7 @@ class CMT:
 
             keys   = list(self.memories.keys())
             scores = f.predict(x, keys)
-            sort   = sorted(zip(keys,scores), key=lambda t: (t[1], self.rng))
+            sort   = sorted(zip(keys,scores), key=lambda t: (t[1], self.rng.random()))
 
             return self.memories[sort[0][0]]
 
@@ -53,7 +55,7 @@ class CMT:
         c:Splitter, 
         d:int, 
         alpha:float=0.25, 
-        rng:Random= Random(1337)):
+        rng:CobaRandom= CobaRandom(1337)):
 
         self.max_mem   = max_mem
         self.g_factory = router
@@ -213,7 +215,7 @@ class CMT:
 
     def __reroute(self):
 
-        _d = self.d if self.d > 1 else 1 if self.rng.random() < self.d else 0
+        _d = self.d if self.d >= 1 else 1 if self.rng.random() < self.d else 0
 
         for _ in range(_d):
             x = self.rng.choice(list(self.leaf_by_key.keys()))
