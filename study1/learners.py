@@ -29,19 +29,18 @@ class MemoryKey:
 
 class MemorizedLearner:
 
-    def __init__(self, epsilon: float, weight:bool, cmt: CMT) -> None:
+    def __init__(self, epsilon: float, cmt: CMT) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 
         self._epsilon = epsilon
         self._i       = 0
         self._cmt     = cmt
-        self._weight  = weight
         self._times   = [0, 0]
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'memorized_taken','e':self._epsilon, 'w':self._weight, **self._cmt.params }
+        return { 'family': 'memorized_taken','e':self._epsilon, **self._cmt.params }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -88,9 +87,7 @@ class MemorizedLearner:
 
         memory_key = MemoryKey(context, action)
 
-        weight = 1 if not self._weight else 1/(n_actions*probability)
-
-        self._cmt.update(key=memory_key, outcome=reward, weight=weight)
-        self._cmt.insert(key=memory_key, value=reward, weight=weight)
+        self._cmt.update(key=memory_key, outcome=reward, weight=1/(n_actions*probability))
+        self._cmt.insert(key=memory_key, value=reward, weight=1/(n_actions*probability))
 
         self._times[1] += time.time()-learn_start

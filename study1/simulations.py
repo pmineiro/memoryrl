@@ -65,7 +65,8 @@ class LocalSyntheticSimulation(LambdaSimulation):
                 sim_rewards[(i,action)] = rewards[(c,action)]
 
         def context_generator(index:int, rng: CobaRandom):
-            return tuple([ c + 0.1*rng.random() for c in sim_contexts[index] ])
+            return sim_contexts[index]
+            #return tuple([ c + 0.1*rng.random() for c in sim_contexts[index] ])
 
         def action_generator(index:int, context:Tuple[float,...], rng: CobaRandom):
             return actions

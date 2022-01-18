@@ -22,13 +22,13 @@ class Scorer(ABC):
 
 class RankScorer(Scorer):
 
-    def __init__(self, power_t:int, X: Sequence[str], initial_weight:float, coin:bool):
+    def __init__(self, power_t:int, X: Sequence[str], initial_weight:float, coin:bool, base:str):
         
-        self.args = (power_t,X,initial_weight,coin)
+        self.args = (power_t,X,initial_weight,coin,base)
 
         interactions = " ".join(f"--interactions {x}" for x in X)
         coin_flag    = "--coin" if coin else ""
-        self.vw = pyvw.vw(f'--quiet -b {bits} --power_t {power_t} --initial_weight {initial_weight} {coin_flag} --noconstant --loss_function squared --min_prediction 0 --max_prediction 1 {interactions}')
+        self.vw = pyvw.vw(f' --quiet -b {bits} --initial_t 1 --power_t {power_t} --initial_weight {initial_weight} {coin_flag} --noconstant --loss_function squared --min_prediction 0 --max_prediction 1 {interactions}')
 
         self.t       = 0
         self.power_t = power_t
@@ -42,10 +42,16 @@ class RankScorer(Scorer):
         values = []
 
         for memory_key in memory_keys:
-            values.append(self.vw.predict(self._make_example(query_key, memory_key, None, None)))
+            example = self._make_example(query_key, memory_key, None, None)
+            values.append(self.vw.predict(example))
+            self.vw.finish_example(example)
 
-        # if query_key in memory_keys and len([v for v in values if v == 0]) == 1:
-        #     assert memory_keys.index(query_key) == values.index(0)
+            #assert values[-1] - max(0,sum([self.vw.get_weight(i)*v for i,v in example.iter_features()])) < .00001
+
+        #if query_key in memory_keys and len([v for v in values if v == 0]) == 1:
+
+        # if query_key in memory_keys:
+        #     assert values[memory_keys.index(query_key)] == 0
 
         # if query_key in memory_keys and len([v for v in values if v == 0]) > 1:
         #     print(f"interesting {len([v for v in values if v == 0])} {self.t} {len([ self.vw.get_weight(i) for i in reversed(range(self.vw.num_weights())) if self.vw.get_weight(i) < 0])}")
@@ -70,23 +76,32 @@ class RankScorer(Scorer):
 
         preferred_advantage = preferred_err - alternative_err
 
-        if preferred_advantage == 0: return
+        if preferred_advantage == 0 or weight == 0: return
 
         self.t += 1
 
         preferred_label   = 0 if preferred_advantage < 0 else 1
-        alternative_label = 1-preferred_label 
+        alternative_label = 1-preferred_label
 
-        example = self._make_example(query_key, preferred_key, preferred_label, weight*abs(preferred_advantage))
-        self.vw.learn(example)
-        self.vw.finish_example(example)
+        if self.rng.random() < .5:
+            example = self._make_example(query_key, preferred_key, preferred_label, weight*abs(preferred_advantage))
+            self.vw.learn(example)
+            self.vw.finish_example(example)
 
-        example = self._make_example(query_key, alternative_key, alternative_label, weight*abs(preferred_advantage))
-        self.vw.learn(example)
-        self.vw.finish_example(example)
+            example = self._make_example(query_key, alternative_key, alternative_label, weight*abs(preferred_advantage))
+            self.vw.learn(example)
+            self.vw.finish_example(example)
+        else:
+            example = self._make_example(query_key, alternative_key, alternative_label, weight*abs(preferred_advantage))
+            self.vw.learn(example)
+            self.vw.finish_example(example)
+
+            example = self._make_example(query_key, preferred_key, preferred_label, weight*abs(preferred_advantage))
+            self.vw.learn(example)
+            self.vw.finish_example(example)
 
     def _diff_features(self, x1, x2):
-        
+
         x1 = x1
         x2 = x2
 
@@ -101,13 +116,25 @@ class RankScorer(Scorer):
         x = VowpalMediator.prep_features(self._diff_features(query_key.context, memory_key.context))
 
         example = pyvw.example(self.vw, {'x': x, 'a': a})
-        #base = self._cos_dist(query_key, memory_key)
+
         base = 0
 
-        assert 0 <= base and base <= 1
+        if self.args[4] == "l2":
+            base = self._l2_dist(query_key, memory_key)
 
-        example.set_label_string(f"{'' if label is None else label} {1 if weight is None else weight} {base}")
-        
+        if self.args[4] == "cos":
+            base = self._cos_dist(query_key, memory_key)
+            assert 0 <= base and base <= 1
+
+        if self.args[4] == "exp":
+            base = 1-math.exp(-self._l2_dist(query_key, memory_key))
+            assert 0 <= base and base <= 1
+
+        if query_key == memory_key:
+            assert base == 0
+
+        example.set_label_string(f"{-1 if label is None else label} {1 if weight is None else weight} {base}")
+
         #example.get_feature_number()
         #list(example.iter_features())
         #[ (i,self.vw.get_weight(i)) for i in reversed(range(self.vw.num_weights())) if self.vw.get_weight(i) != 0]
@@ -115,20 +142,27 @@ class RankScorer(Scorer):
         return example
 
     def _cos_dist(self, query_key, memory_key) -> float:
-        
-        def _dot(x1,x2):
 
-            if isinstance(x1, dict):
-                return sum([x1[k]*x2[k] for k in (x1.keys() & x2.keys())])
-            elif isinstance(x1, (tuple,list)):
-                return sum([i*j for i,j in zip(x1,x2)])
-            else:
-                return _dot(x1.context, x2.context) + _dot(x1.action, x2.action)
+        n1 = self._dot(query_key, query_key)
+        n2 = self._dot(memory_key, memory_key)
 
-        n1 = _dot(query_key,query_key)
-        n2 = _dot(memory_key, memory_key)
-        
-        return (1-_dot(memory_key,query_key)/math.sqrt(n1*n2))/2
+        return (1-self._dot(memory_key,query_key)/math.sqrt(n1*n2))/2
+
+    def _l2_dist(self, query_key, memory_key) -> float:
+
+        a = self._diff_features(query_key.action, memory_key.action)
+        c = self._diff_features(query_key.context, memory_key.context)
+
+        return math.sqrt(self._dot(a,a) + self._dot(c,c))
+
+    def _dot(self, x1,x2):
+
+        if isinstance(x1, dict):
+            return sum([x1[k]*x2[k] for k in (x1.keys() & x2.keys())])
+        elif isinstance(x1, (tuple,list)):
+            return sum([i*j for i,j in zip(x1,x2)])
+        else:
+            return self._dot(x1.context, x2.context) + self._dot(x1.action, x2.action)
 
     def __repr__(self) -> str:
         return f"rank{self.args}"
