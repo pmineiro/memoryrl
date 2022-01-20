@@ -28,38 +28,28 @@ class LogisticRouter(RouterFactory):
 
         def __init__(self, power_t, X, coin):
             self.t  = 0
-            interactions = " ".join(f"--interactions {x}" for x in X)
-            coin_flag    = "--coin" if coin else ""
-            self.vw = pyvw.vw(f'--quiet -b {bits} --loss_function logistic {coin_flag} --noconstant --power_t {power_t} --link=glf1 {interactions}')
+            options = [
+                "--quiet",
+                f"-b {bits}",
+                f"--power_t {power_t}",
+                "--coin" if coin else "",
+                "--noconstant",
+                "--loss_function logistic",
+                "--link=glf1",
+                *[f"--interactions {x}" for x in X]
+            ]
+            self.vw = VowpalMediator().init_learner(" ".join(options), 0)
 
         def predict(self, query_key):
-            example = self._make_example(query_key, None, None)
-            value = self.vw.predict(example)
-            self.vw.finish_example(example)
-            
-            return value
+            return self.vw.predict(self._make_example(query_key, None, None))
 
         def update(self, query_key, label, weight):
             self.t += 1
-
-            example = self._make_example(query_key, label, weight)
-            self.vw.learn(example)
-            self.vw.finish_example(example)
+            self.vw.learn(self._make_example(query_key, label, weight))
 
         def _make_example(self, query_key, label, weight) -> pyvw.example:
-
-            context = query_key.context
-            action  = query_key.action
-
-            x = VowpalMediator.prep_features(context)
-            a = VowpalMediator.prep_features(action)
-
-            ex = pyvw.example(self.vw, {"x": x, "a": a})
-
-            if label is not None:
-                ex.set_label_string(f"{label} {weight}")
-
-            return ex
+            label = None if label is None else f"{label} {weight}"
+            return self.vw.make_example({"x": query_key.context, "a": query_key.action}, label)
 
     def __init__(self, power_t:float, X:Sequence[str], coin:bool) -> None:
         self._power_t = power_t

@@ -1,5 +1,6 @@
-from math   import log
-from typing import Dict, Any, Tuple, Hashable, Iterable, List
+from math      import log
+from itertools import count, repeat
+from typing    import Dict, Any, Sequence, Tuple, Hashable, Iterable, List
 
 from routers import RouterFactory
 from scorers import Scorer
@@ -15,13 +16,12 @@ Memory = Tuple[MemKey,MemVal]
 class CMT:
 
     class Node:
-        def __init__(self, parent:'CMT.Node', rng: Random):
+        def __init__(self, id: int, parent: 'CMT.Node'):
             self.parent = parent
 
             self.memories: Dict[MemKey,MemVal] = {}
 
-            self.rng = rng
-
+            self.id    = id
             self.n     = 0
             self.left  = None
             self.right = None
@@ -35,37 +35,25 @@ class CMT:
         def depth(self):
             return 1 + self.parent.depth if self.parent else 0
 
-        def top(self, x, f:Scorer) -> MemVal:
-            assert self.is_leaf
-            #this could be modified so that it randomly picks in the case of ties. 
-
-            if not self.memories:
-                return None
-
-            keys   = list(self.memories.keys())
-            scores = f.predict(x, keys)
-            sort   = sorted(zip(keys,scores), key=lambda t: (t[1], self.rng.random()))
-
-            return self.memories[sort[0][0]]
-
-    def __init__(self, 
-        max_mem:int, 
-        router: RouterFactory, 
-        scorer: Scorer, 
-        c:Splitter, 
-        d:int, 
+    def __init__(self,
+        max_mem:int,
+        router: RouterFactory,
+        scorer: Scorer,
+        c:Splitter,
+        d:int,
         alpha:float=0.25, 
         rng:CobaRandom= CobaRandom(1337)):
 
-        self.max_mem   = max_mem
+        self.max_mem      = max_mem
         self.g_factory = router
         self.f         = scorer
         self.alpha     = alpha
         self.c         = c
         self.d         = d
         self.rng       = rng
+        self.node_ids  = iter(count())
 
-        self.root = CMT.Node(None, rng)
+        self.root = CMT.Node(next(self.node_ids), None)
 
         self.leaf_by_key: Dict[MemKey,CMT.Node] = {}
         self.nodes: List[CMT.Node] = [self.root]
@@ -74,20 +62,24 @@ class CMT:
         self.splitting = False
 
     @property
+    def times(self) -> Sequence[float]:
+        return self.f.times
+
+    @property
     def params(self) -> Dict[str,Any]:
         return { 'm': self.max_mem, 'd': self.d, 'c': str(self.c), "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
 
     def query(self, key) -> MemVal:
-        return self.__query(key) 
+        return self.__query(key, self.root)[1]
 
     def update(self, key: MemKey, outcome: float, weight: float) -> None:
 
         assert 0 <= outcome <= 1
         assert 0 <= weight
 
-        query_path, query_pred = self.__query(key)
+        if self.root.n == 0: return
 
-        if query_pred is None: return
+        query_path, query_pred = self.__query(key, self.root)
 
         #update leaf
         mem_key_err_pairs = [ (k, (outcome-v)**2) for k,v in query_path[-1].memories.items() ]
@@ -98,7 +90,7 @@ class CMT:
         for curr_node, next_node in zip(query_path, query_path[1:]):
 
             alternate_node = curr_node.left if curr_node.right is next_node else curr_node.right
-            alternate_pred = list(self.__path(key,alternate_node))[-1].top(key, self.f)
+            alternate_pred = self.__query(key,alternate_node)[1] 
 
             assert (curr_node.left is next_node) or (curr_node.right is next_node)
             assert (curr_node.left is alternate_node) or (curr_node.right is alternate_node)
@@ -190,8 +182,8 @@ class CMT:
             leaf.memories.clear()
 
             new_parent       = leaf
-            new_parent.left  = CMT.Node(new_parent, self.rng)
-            new_parent.right = CMT.Node(new_parent, self.rng)
+            new_parent.left  = CMT.Node(next(self.node_ids), new_parent)
+            new_parent.right = CMT.Node(next(self.node_ids), new_parent)
             new_parent.n     = 0
             new_parent.g     = self.g_factory()
 
@@ -229,9 +221,23 @@ class CMT:
             node = node.right if node.g.predict(key) > 0 else node.left
             yield node
 
-    def __query(self, key: MemKey) -> Tuple[List['CMT.Node'], MemVal]:
-        query_path = list(self.__path(key, self.root))
-        query_pred = query_path[-1].top(key, self.f)        
+    def __query(self, key: MemKey, init: 'CMT.Node') -> Tuple[List['CMT.Node'], MemVal]:
+        query_path = list(self.__path(key, init))
+        final_node = query_path[-1]
+
+        if final_node.is_leaf and final_node is self.root and not final_node.memories :
+            query_pred = 0
+        
+        else:
+            assert final_node.is_leaf and final_node.memories
+
+            mem_keys    = list(final_node.memories.keys())
+            mem_scores  = self.f.predict(key,mem_keys)
+            tie_breaker = ( self.rng.random() for _ in count()) #randomly break
+
+            top_mem_key = list(zip(*sorted(zip(mem_scores, tie_breaker, mem_keys))))[2][0]
+            query_pred  = final_node.memories[top_mem_key]
+
         return query_path, query_pred
 
     def __update_g(self, key: MemKey,  left_err: float, right_err: float, v: 'CMT.Node', weight: float):

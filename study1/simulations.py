@@ -1,11 +1,13 @@
-
+from code import interact
 from typing import Tuple
 
 import numpy as np
+from sklearn.decomposition import TruncatedSVD
 
 from coba.encodings import OneHotEncoder
-from coba.environments import LambdaSimulation
+from coba.environments import LambdaSimulation, EnvironmentFilter, SimulatedInteraction
 from coba.random import CobaRandom
+
 
 class LocalSyntheticSimulation(LambdaSimulation):
     """A simple simulation useful for debugging learning algorithms. 
@@ -65,8 +67,8 @@ class LocalSyntheticSimulation(LambdaSimulation):
                 sim_rewards[(i,action)] = rewards[(c,action)]
 
         def context_generator(index:int, rng: CobaRandom):
-            return sim_contexts[index]
-            #return tuple([ c + 0.1*rng.random() for c in sim_contexts[index] ])
+            #return sim_contexts[index]
+            return tuple([ c + 0.01*rng.random() for c in sim_contexts[index] ])
 
         def action_generator(index:int, context:Tuple[float,...], rng: CobaRandom):
             return actions
@@ -90,3 +92,45 @@ class LocalSyntheticSimulation(LambdaSimulation):
 
     def __reduce__(self) -> Tuple[object, ...]:
         return (LocalSyntheticSimulation, self.args)
+
+class MNIST_LabelFilter(EnvironmentFilter):
+
+    def __init__(self, labels) -> None:
+        self._labels = labels
+
+    @property
+    def params(self):
+        return {'labels': self._labels}
+
+    def filter(self, interactions):
+        for interaction in interactions:
+            if interaction.actions[interaction.kwargs["rewards"].index(1)] in self._labels:
+                
+                label_indexes = [ interaction.actions.index(label) for label in self._labels ]
+                rewards       = [ interaction.kwargs["rewards"][i] for i in label_indexes ]
+
+                yield SimulatedInteraction(interaction.context, self._labels, rewards=rewards)
+
+class MNIST_SVD(EnvironmentFilter):
+
+    def __init__(self, rank, seed=42) -> None:
+        self._rank = rank
+        self._seed = seed
+
+    @property
+    def params(self):
+        return {'rank': self._rank, 'svd_seed': self._seed}
+
+    def filter(self, interactions):        
+        rows = []
+        stuff = []
+
+        for interaction in interactions:
+            rows.append(interaction.context)
+            stuff.append((interaction.actions, interaction.kwargs["rewards"]))
+
+        svd = TruncatedSVD(n_components=self._rank, n_iter=5, random_state=self._seed)
+        Xprimes = svd.fit_transform(np.array(rows))
+
+        for xprime, (actions, rewards) in zip(Xprimes, stuff):
+            yield SimulatedInteraction( tuple(xprime), actions, rewards=rewards)

@@ -15,10 +15,15 @@ bits = 20
 
 class MemoryKey:
 
+    times = [0]
+
     def __init__(self, context, action) -> None:
 
+        start_time = time.time()
         self.context = InteractionsEncoder(["x"]).encode(x=context)
         self.action  = InteractionsEncoder(["a"]).encode(a=action)
+        MemoryKey.times[0] += time.time()-start_time
+        
         self._hash   = hash((context,action))
 
     def __hash__(self) -> int:
@@ -48,14 +53,14 @@ class MemorizedLearner:
         self._i += 1
 
         if logn and self._i % logn == 0:
+           print(f"MEM {self._i}. avg key        time {round(MemoryKey.times[0]/self._i,2)}")
+           print(f"MEM {self._i}. avg rank       time {[round(t/self._i,2) for t in self._cmt.times]}")
            print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
            print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         predict_start = time.time()
 
-        paths,rewards = zip(*[self._cmt.query(MemoryKey(context, a)) or 0 for a in actions])
-
-        LearnerContext.logger.write(avg_depths=mean([len(p) for p in paths]))
+        rewards = [self._cmt.query(MemoryKey(context, a)) for a in actions]
 
         greedy_r = -math.inf
         greedy_A = []

@@ -12,12 +12,12 @@ from learners import MemorizedLearner
 from routers import LogisticRouter
 from scorers import RankScorer
 from tasks import FinalPrintEvaluationTask
-from simulations import LocalSyntheticSimulation
+from simulations import LocalSyntheticSimulation, MNIST_LabelFilter, MNIST_SVD
 from splitters import LogSplitter, ConstSplitter
 
 from coba.environments import Environments
 from coba.experiments  import Experiment, ClassEnvironmentTask, SimpleEnvironmentTask, OnlineOnPolicyEvalTask
-from coba.learners     import VowpalEpsilonLearner, CorralLearner
+from coba.learners     import VowpalEpsilonLearner, CorralLearner, EpsilonBanditLearner
 
 experiment = 'full6'
 json       = f"./study1/experiments/{experiment}.json"
@@ -28,24 +28,23 @@ epsilon      = 0.1
 
 if __name__ == '__main__':
 
-   Xs      = [ ["xa", "xxa"] ]
+   Xs      = [ [] ]
    cs      = [ LogSplitter(26) ]
-   ds      = [ .75, 1 ]
-   alphas  = [ .25 ]
+   ds      = [ 1 ]
+   alphas  = [ .25,]
    init_ws = [ 1 ]
    coins   = [ True ]
-   bases   = [ "none", "l2", "cos", "exp" ]
+   bases   = [ "none" ]
 
    learners = [
-      VowpalEpsilonLearner(epsilon=epsilon, power_t=0)
+      VowpalEpsilonLearner(epsilon=epsilon, power_t=0, interactions=["xa"]),
+      EpsilonBanditLearner(epsilon)
    ]
 
    for c, d, alpha, X, w, coin, base in itertools.product(cs,ds,alphas, Xs, init_ws, coins, bases):
       learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,X,coin), RankScorer(0,X,w,coin,base), c=c, d=d, alpha=alpha)))
 
-   environments = Environments([LocalSyntheticSimulation(20, n_context_feats=2, n_actions=2, n_contexts=50)]).binary().shuffle(range(1))
-   #environments = Environments.from_linear_synthetic(1000, n_context_features=10, n_actions=2).binary().shuffle(range(2))
-   #environments = Environments.from_file(json)
-   #environments = Environments.from_openml(120, take=6000, cat_as_str=True).scale("min","minmax").shuffle([100])
+   #environments = Environments([LocalSyntheticSimulation(20, n_context_feats=2, n_actions=2, n_contexts=50)]).binary().shuffle(range(1))
+   environments = Environments.from_openml(554, take=10000, cat_as_str=True).filter(MNIST_LabelFilter(['9','4'])).filter(MNIST_SVD(30)).scale("min","minmax")
 
    Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=FinalPrintEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()

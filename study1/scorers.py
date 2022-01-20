@@ -1,3 +1,4 @@
+import time
 import math
 
 from abc import ABC, abstractmethod
@@ -22,14 +23,25 @@ class Scorer(ABC):
 
 class RankScorer(Scorer):
 
+    times = [0,0]
+
     def __init__(self, power_t:int, X: Sequence[str], initial_weight:float, coin:bool, base:str):
         
         self.args = (power_t,X,initial_weight,coin,base)
-
-        interactions = " ".join(f"--interactions {x}" for x in X)
-        coin_flag    = "--coin" if coin else ""
-        self.vw = pyvw.vw(f' --quiet -b {bits} --initial_t 1 --power_t {power_t} --initial_weight {initial_weight} {coin_flag} --noconstant --loss_function squared --min_prediction 0 --max_prediction 1 {interactions}')
-
+        options = [
+            "--quiet",
+            f"-b {bits}",
+            f"--power_t {power_t}",
+            f"--initial_weight {initial_weight}",
+            "--coin" if coin else "",
+            "--noconstant",
+            "--loss_function squared",
+            "--min_prediction 0",
+            "--max_prediction 1",
+            *[f"--interactions {x}" for x in X]
+        ]
+        
+        self.vw      = VowpalMediator().init_learner(" ".join(options), 0)
         self.t       = 0
         self.power_t = power_t
         self.rng     = CobaRandom(1)
@@ -40,11 +52,8 @@ class RankScorer(Scorer):
     def predict(self, query_key, memory_keys):
 
         values = []
-
         for memory_key in memory_keys:
-            example = self._make_example(query_key, memory_key, None, None)
-            values.append(self.vw.predict(example))
-            self.vw.finish_example(example)
+            values.append(self.vw.predict(self._make_example(query_key, memory_key, None, None)))
 
             #assert values[-1] - max(0,sum([self.vw.get_weight(i)*v for i,v in example.iter_features()])) < .00001
 
@@ -82,23 +91,14 @@ class RankScorer(Scorer):
 
         preferred_label   = 0 if preferred_advantage < 0 else 1
         alternative_label = 1-preferred_label
+        update_weight     = weight*abs(preferred_advantage)
 
         if self.rng.random() < .5:
-            example = self._make_example(query_key, preferred_key, preferred_label, weight*abs(preferred_advantage))
-            self.vw.learn(example)
-            self.vw.finish_example(example)
-
-            example = self._make_example(query_key, alternative_key, alternative_label, weight*abs(preferred_advantage))
-            self.vw.learn(example)
-            self.vw.finish_example(example)
+            self.vw.learn(self._make_example(query_key, preferred_key, preferred_label, update_weight))
+            self.vw.learn(self._make_example(query_key, alternative_key, alternative_label, update_weight))
         else:
-            example = self._make_example(query_key, alternative_key, alternative_label, weight*abs(preferred_advantage))
-            self.vw.learn(example)
-            self.vw.finish_example(example)
-
-            example = self._make_example(query_key, preferred_key, preferred_label, weight*abs(preferred_advantage))
-            self.vw.learn(example)
-            self.vw.finish_example(example)
+            self.vw.learn(self._make_example(query_key, alternative_key, alternative_label, update_weight))
+            self.vw.learn(self._make_example(query_key, preferred_key, preferred_label, update_weight))
 
     def _diff_features(self, x1, x2):
 
@@ -112,28 +112,31 @@ class RankScorer(Scorer):
 
     def _make_example(self, query_key, memory_key, label, weight) -> pyvw.example:
 
-        a = VowpalMediator.prep_features(self._diff_features(query_key.action, memory_key.action))
-        x = VowpalMediator.prep_features(self._diff_features(query_key.context, memory_key.context))
+        start_time = time.time()
+        diff_a = self._diff_features(query_key.action, memory_key.action)
+        diff_x = self._diff_features(query_key.context, memory_key.context)
+        RankScorer.times[0] += time.time()-start_time
 
-        example = pyvw.example(self.vw, {'x': x, 'a': a})
-
-        base = 0
-
-        if self.args[4] == "l2":
+        if self.args[4]=="none":
+            base = 0
+        elif self.args[4] == "l2":
             base = self._l2_dist(query_key, memory_key)
-
-        if self.args[4] == "cos":
+        elif self.args[4] == "cos":
             base = self._cos_dist(query_key, memory_key)
             assert 0 <= base and base <= 1
-
-        if self.args[4] == "exp":
+        elif self.args[4] == "exp":
             base = 1-math.exp(-self._l2_dist(query_key, memory_key))
-            assert 0 <= base and base <= 1
+            assert 0 <= base and base <= 1        
+        else:
+            raise Exception("Unrecognized Base")
 
         if query_key == memory_key:
             assert base == 0
 
-        example.set_label_string(f"{-1 if label is None else label} {1 if weight is None else weight} {base}")
+        start_time = time.time()
+        label = f"{0 if label is None else label} {1 if weight is None else weight} {base}"
+        example = self.vw.make_example({'x': diff_x, 'a': diff_a}, label)
+        RankScorer.times[1] += time.time()-start_time
 
         #example.get_feature_number()
         #list(example.iter_features())
