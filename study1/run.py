@@ -1,4 +1,3 @@
-from mimetypes import init
 import os
 import itertools
 
@@ -28,14 +27,19 @@ epsilon      = 0.1
 
 if __name__ == '__main__':
 
-   Xs      = [ [] ]
-   cs      = [ LogSplitter(26) ]
-   ds      = [ 1 ]
-   alphas  = [ .25,]
-   init_ws = [ 1 ]
-   coins   = [ True ]
-   bases   = [ "none" ]
+   Xs       = [ [] ]
+   cs       = [ LogSplitter(26) ]
+   ds       = [ 1 ]
+   alphas   = [ .25,]
+   init_ws  = [ 1 ]
+   coins    = [ True ]
+   bases    = [ "none" ]
 
+   #delay re-routing until node is split...
+      #this hurts performance
+   
+   #add in a localization term to the scorer...
+   
    learners = [
       VowpalEpsilonLearner(epsilon=epsilon, power_t=0, interactions=["xa"]),
       EpsilonBanditLearner(epsilon)
@@ -45,6 +49,6 @@ if __name__ == '__main__':
       learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,X,coin), RankScorer(0,X,w,coin,base), c=c, d=d, alpha=alpha)))
 
    #environments = Environments([LocalSyntheticSimulation(20, n_context_feats=2, n_actions=2, n_contexts=50)]).binary().shuffle(range(1))
-   environments = Environments.from_openml(554, take=10000, cat_as_str=True).filter(MNIST_LabelFilter(['9','4'])).filter(MNIST_SVD(30)).scale("min","minmax")
+   environments = Environments.from_openml(554, take=10000, cat_as_str=True).filter(MNIST_LabelFilter(['9','4'])).filter(MNIST_SVD(30)).scale("min","minmax").take(1250)
 
    Experiment(environments, learners, environment_task=ClassEnvironmentTask(), evaluation_task=FinalPrintEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()

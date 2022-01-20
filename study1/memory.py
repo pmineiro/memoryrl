@@ -1,10 +1,9 @@
 from math      import log
-from itertools import count, repeat
+from itertools import count
 from typing    import Dict, Any, Sequence, Tuple, Hashable, Iterable, List
 
-from routers import RouterFactory
-from scorers import Scorer
-from random  import Random
+from routers   import RouterFactory, Router
+from scorers   import Scorer
 from splitters import Splitter
 
 from coba.random import CobaRandom
@@ -13,27 +12,27 @@ MemKey = Hashable
 MemVal = Any
 Memory = Tuple[MemKey,MemVal]
 
+class Node:
+    def __init__(self, id: int, parent: 'Node'):
+        self.parent = parent
+
+        self.memories: Dict[MemKey,MemVal] = {}
+
+        self.id            = id
+        self.n             = 0
+        self.left : Node   = None
+        self.right: Node   = None
+        self.g    : Router = None
+
+    @property
+    def is_leaf(self) -> bool:
+        return self.left is None
+
+    @property
+    def depth(self):
+        return 1 + self.parent.depth if self.parent else 0
+
 class CMT:
-
-    class Node:
-        def __init__(self, id: int, parent: 'CMT.Node'):
-            self.parent = parent
-
-            self.memories: Dict[MemKey,MemVal] = {}
-
-            self.id    = id
-            self.n     = 0
-            self.left  = None
-            self.right = None
-            self.g     = None
-
-        @property
-        def is_leaf(self) -> bool:
-            return self.left is None
-
-        @property
-        def depth(self):
-            return 1 + self.parent.depth if self.parent else 0
 
     def __init__(self,
         max_mem:int,
@@ -53,10 +52,10 @@ class CMT:
         self.rng       = rng
         self.node_ids  = iter(count())
 
-        self.root = CMT.Node(next(self.node_ids), None)
+        self.root = Node(next(self.node_ids), None)
 
-        self.leaf_by_key: Dict[MemKey,CMT.Node] = {}
-        self.nodes: List[CMT.Node] = [self.root]
+        self.leaf_by_key: Dict[MemKey,Node] = {}
+        self.nodes: List[Node] = [self.root]
 
         self.rerouting = False
         self.splitting = False
@@ -70,6 +69,9 @@ class CMT:
         return { 'm': self.max_mem, 'd': self.d, 'c': str(self.c), "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
 
     def query(self, key) -> MemVal:
+        
+        if self.root.n == 0: return 0
+        
         return self.__query(key, self.root)[1]
 
     def update(self, key: MemKey, outcome: float, weight: float) -> None:
@@ -110,37 +112,40 @@ class CMT:
         assert key in self.leaf_by_key # deleting something not in the memory ...
 
         v = self.leaf_by_key.pop(key)
+        
+        v.n -=1
+        v.memories.pop(key)
+        v = v.parent
 
-        while v is not None:                
+        while v is not None:
             v.n -= 1
-            
-            if v.is_leaf:
-                v.memories.pop(key)
-            
-            else:
-                null_child = v.left if v.left.n == 0 else v.right if v.right.n == 0 else None
-                live_child = v.right if v.left.n == 0 else v.left if v.right.n == 0 else None
 
-                if null_child is not None:
+            child_sans_memory = v.left if v.left.n == 0 else v.right if v.right.n == 0 else None
 
-                    live_child.parent = v.parent
+            if child_sans_memory is not None:
 
-                    if v.parent and v.parent.right is v:
-                        v.parent.right = live_child
-                    
-                    if v.parent and v.parent.left is v:
-                        v.parent.left = live_child
+                child_with_memory = v.right if child_sans_memory is v.left else v.left
 
-                    if v.parent is None:
-                        self.root = live_child
+                assert child_with_memory.n != 0
 
-                    self.nodes.pop(self.nodes.index(v))
-                    self.nodes.pop(self.nodes.index(null_child))
+                child_with_memory.parent = v.parent
+
+                if v.parent and v.parent.right is v:
+                    v.parent.right = child_with_memory
+
+                if v.parent and v.parent.left is v:
+                    v.parent.left = child_with_memory
+
+                if v.parent is None:
+                    self.root = child_with_memory
+
+                self.nodes.pop(self.nodes.index(v))
+                self.nodes.pop(self.nodes.index(child_sans_memory))
 
             assert v.n >= 0
             v = v.parent
 
-    def insert(self, key: MemKey, value: MemVal, weight: float, *, v: 'CMT.Node'=None):
+    def insert(self, key: MemKey, value: MemVal, weight: float, *, v: Node=None):
 
         if key in self.leaf_by_key: return
 
@@ -161,7 +166,7 @@ class CMT:
         if not self.rerouting and not self.splitting:
             self.__reroute()
 
-    def __insertLeaf(self, key: MemKey, val: MemVal, leaf: 'CMT.Node', weight: float):
+    def __insertLeaf(self, key: MemKey, val: MemVal, leaf: Node, weight: float):
 
         assert leaf.is_leaf
 
@@ -182,8 +187,8 @@ class CMT:
             leaf.memories.clear()
 
             new_parent       = leaf
-            new_parent.left  = CMT.Node(next(self.node_ids), new_parent)
-            new_parent.right = CMT.Node(next(self.node_ids), new_parent)
+            new_parent.left  = Node(next(self.node_ids), new_parent)
+            new_parent.right = Node(next(self.node_ids), new_parent)
             new_parent.n     = 0
             new_parent.g     = self.g_factory()
 
@@ -215,32 +220,28 @@ class CMT:
             self.insert(x, o, 1)
             self.rerouting = False
 
-    def __path(self, key: MemKey, node: 'CMT.Node') -> Iterable['CMT.Node']:
+    def __path(self, key: MemKey, node: Node) -> Iterable[Node]:
         yield node
         while not node.is_leaf:
             node = node.right if node.g.predict(key) > 0 else node.left
             yield node
 
-    def __query(self, key: MemKey, init: 'CMT.Node') -> Tuple[List['CMT.Node'], MemVal]:
+    def __query(self, key: MemKey, init: Node) -> Tuple[List[Node], MemVal]:
         query_path = list(self.__path(key, init))
         final_node = query_path[-1]
 
-        if final_node.is_leaf and final_node is self.root and not final_node.memories :
-            query_pred = 0
-        
-        else:
-            assert final_node.is_leaf and final_node.memories
+        assert final_node.is_leaf and final_node.memories
 
-            mem_keys    = list(final_node.memories.keys())
-            mem_scores  = self.f.predict(key,mem_keys)
-            tie_breaker = ( self.rng.random() for _ in count()) #randomly break
+        mem_keys    = list(final_node.memories.keys())
+        mem_scores  = self.f.predict(key,mem_keys)
+        tie_breaker = ( self.rng.random() for _ in count()) #randomly break
 
-            top_mem_key = list(zip(*sorted(zip(mem_scores, tie_breaker, mem_keys))))[2][0]
-            query_pred  = final_node.memories[top_mem_key]
+        top_mem_key = list(zip(*sorted(zip(mem_scores, tie_breaker, mem_keys))))[2][0]
+        query_pred  = final_node.memories[top_mem_key]
 
         return query_path, query_pred
 
-    def __update_g(self, key: MemKey,  left_err: float, right_err: float, v: 'CMT.Node', weight: float):
+    def __update_g(self, key: MemKey,  left_err: float, right_err: float, v: Node, weight: float):
 
         assert 0 <= left_err and left_err <=1
         assert 0 <= right_err and right_err <=1
