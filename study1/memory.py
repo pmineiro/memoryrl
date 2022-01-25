@@ -41,6 +41,7 @@ class CMT:
         c:Splitter,
         d:int,
         alpha:float=0.25, 
+        v:int = 1,
         rng:CobaRandom= CobaRandom(1337)):
 
         self.max_mem      = max_mem
@@ -51,6 +52,7 @@ class CMT:
         self.d         = d
         self.rng       = rng
         self.node_ids  = iter(count())
+        self.v         = v
 
         self.root = Node(next(self.node_ids), None)
 
@@ -61,17 +63,13 @@ class CMT:
         self.splitting = False
 
     @property
-    def times(self) -> Sequence[float]:
-        return self.f.times
-
-    @property
     def params(self) -> Dict[str,Any]:
-        return { 'm': self.max_mem, 'd': self.d, 'c': str(self.c), "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
+        return { 'v':self.v, 'm': self.max_mem, 'd': self.d, 'c': str(self.c), "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
 
     def query(self, key) -> MemVal:
-        
+
         if self.root.n == 0: return 0
-        
+
         return self.__query(key, self.root)[1]
 
     def update(self, key: MemKey, outcome: float, weight: float) -> None:
@@ -112,7 +110,7 @@ class CMT:
         assert key in self.leaf_by_key # deleting something not in the memory ...
 
         v = self.leaf_by_key.pop(key)
-        
+
         v.n -=1
         v.memories.pop(key)
         v = v.parent
@@ -155,8 +153,11 @@ class CMT:
 
             v.n += 1
 
-            left_error  = 1 if v.g.predict(key) > 0 else 0
-            right_error = 1-left_error
+            predicted_label = v.g.predict(key)
+
+            left_error  = 1 if predicted_label  > 0 else 0
+            right_error = 1 if predicted_label <= 0 else 0
+
             self.__update_g(key, left_error, right_error, v, weight)
 
             v = v.right if v.g.predict(key) > 0 else v.left
@@ -203,8 +204,8 @@ class CMT:
             self.splitting = False
 
         if not self.splitting:
-            mem_keys = self.leaf_by_key[key].memories.keys()
-            mem_errs = [ 0 if k == key else 1 for k in mem_keys]
+            mem_key_err_pairs = [ (k, (val-v)**2) for k,v in self.leaf_by_key[key].memories.items() ]
+            mem_keys, mem_errs = zip(*mem_key_err_pairs)
             self.f.update(key, mem_keys, mem_errs, weight)
 
     def __reroute(self):
@@ -233,10 +234,9 @@ class CMT:
         assert final_node.is_leaf and final_node.memories
 
         mem_keys    = list(final_node.memories.keys())
-        mem_scores  = self.f.predict(key,mem_keys)
-        tie_breaker = ( self.rng.random() for _ in count()) #randomly break
-
-        top_mem_key = list(zip(*sorted(zip(mem_scores, tie_breaker, mem_keys))))[2][0]
+        mem_scores  = self.f.predict(key, mem_keys)
+        tie_breaker = (self.rng.random() for _ in count()) #randomly break
+        top_mem_key = list(sorted(zip(mem_scores, tie_breaker, mem_keys)))[0][2]
         query_pred  = final_node.memories[top_mem_key]
 
         return query_path, query_pred
@@ -246,10 +246,11 @@ class CMT:
         assert 0 <= left_err and left_err <=1
         assert 0 <= right_err and right_err <=1
 
-        balance_diff = log(1e-2 + v.left.n) - log(1e-2 + v.right.n)
-        error_diff   = left_err-right_err
+        balance_direction = log(1e-2 + v.left.n) - log(1e-2 + v.right.n)
+        error_direction   = left_err-right_err
+        final_direction  = (1-self.alpha) * error_direction + self.alpha * balance_direction 
 
-        label = 1 if (1-self.alpha) * error_diff + self.alpha * balance_diff > 0 else -1
-        
-        if error_diff != 0:
-            v.g.update(key, label, weight*abs(error_diff))
+        label = 1 if  final_direction > 0 else -1
+
+        if error_direction != 0:
+            v.g.update(key, label, weight*abs(final_direction))

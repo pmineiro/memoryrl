@@ -15,14 +15,10 @@ bits = 20
 
 class MemoryKey:
 
-    times = [0]
-
     def __init__(self, context, action) -> None:
 
-        start_time = time.time()
         self.context = InteractionsEncoder(["x"]).encode(x=context)
         self.action  = InteractionsEncoder(["a"]).encode(a=action)
-        MemoryKey.times[0] += time.time()-start_time
         
         self._hash   = hash((context,action))
 
@@ -34,18 +30,22 @@ class MemoryKey:
 
 class MemorizedLearner:
 
-    def __init__(self, epsilon: float, cmt: CMT) -> None:
+    def __init__(self, epsilon: float, cmt: CMT, name:str = None) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 
         self._epsilon = epsilon
         self._i       = 0
         self._cmt     = cmt
+        self._name    = name
         self._times   = [0, 0]
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'memorized_taken','e':self._epsilon, **self._cmt.params }
+        if self._name:
+            return { 'family': self._name }
+        else:
+            return { 'family': 'memorized_taken','e':self._epsilon, **self._cmt.params }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -53,8 +53,6 @@ class MemorizedLearner:
         self._i += 1
 
         if logn and self._i % logn == 0:
-           print(f"MEM {self._i}. avg key        time {round(MemoryKey.times[0]/self._i,2)}")
-           print(f"MEM {self._i}. avg rank       time {[round(t/self._i,2) for t in self._cmt.times]}")
            print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
            print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
@@ -92,7 +90,7 @@ class MemorizedLearner:
 
         memory_key = MemoryKey(context, action)
 
-        self._cmt.update(key=memory_key, outcome=reward, weight=1/(n_actions*probability))
+        self._cmt.update(key=memory_key, outcome=reward, weight=1)
         self._cmt.insert(key=memory_key, value=reward, weight=1/(n_actions*probability))
 
         self._times[1] += time.time()-learn_start

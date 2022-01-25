@@ -3,6 +3,7 @@ from typing import Sequence
 
 from vowpalwabbit import pyvw
 from coba.learners.vowpal import VowpalMediator
+from coba.random import CobaRandom
 
 bits = 20
 
@@ -26,7 +27,7 @@ class LogisticRouter(RouterFactory):
 
     class _Router(Router):
 
-        def __init__(self, power_t, X, coin):
+        def __init__(self, power_t, X, coin, l2):
             self.t  = 0
             options = [
                 "--quiet",
@@ -34,6 +35,7 @@ class LogisticRouter(RouterFactory):
                 f"--power_t {power_t}",
                 "--coin" if coin else "",
                 "--noconstant",
+                f"--l2 {l2}",
                 "--loss_function logistic",
                 "--link=glf1",
                 *[f"--interactions {x}" for x in X]
@@ -51,13 +53,31 @@ class LogisticRouter(RouterFactory):
             label = None if label is None else f"{label} {weight}"
             return self.vw.make_example({"x": query_key.context, "a": query_key.action}, label)
 
-    def __init__(self, power_t:float, X:Sequence[str], coin:bool) -> None:
-        self._power_t = power_t
-        self._X = X
-        self._coin = coin
+    def __init__(self, power_t:float, X:Sequence[str], coin:bool, l2: float) -> None:
+        self._args = (power_t, X, coin, l2)
 
     def __call__(self) -> _Router:
-        return LogisticRouter._Router(self._power_t, self._X, self._coin)
+        return LogisticRouter._Router(*self._args)
 
     def __str__(self) -> str:
-        return f"vw({self._power_t},{self._X},{self._coin})"
+        return f"vw{self._args}"
+
+class RandomRouter(RouterFactory,Router):
+
+    def __init__(self) -> None:
+        self._rng = CobaRandom(1)
+
+    def __call__(self) -> 'RandomRouter':
+        return self
+
+    def predict(self, xraw):
+        return 1-2*self._rng.random()
+
+    def update(self, xraw, y, w):
+        pass
+
+    def __repr__(self) -> str:
+        return f"rand"
+
+    def __str__(self) -> str:
+        return self.__repr__()

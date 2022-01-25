@@ -23,8 +23,8 @@ class FinalPrintEvaluationTask(EvaluationTask):
 
         d = list(OnlineOnPolicyEvalTask().process(learner,interactions))
 
-        if isinstance(learner, MemorizedLearner):
-            print(f"s: {learner._cmt.f.t}")
-            print(f"r: {[n.g.t for n in learner._cmt.nodes if n.g]}")
+        # if isinstance(learner, MemorizedLearner):
+        #     print(f"s: {learner._cmt.f.t}")
+        #     print(f"r: {[n.g.t for n in learner._cmt.nodes if n.g]}")
 
         return d
