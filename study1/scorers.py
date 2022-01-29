@@ -24,9 +24,9 @@ class Scorer(ABC):
 
 class RankScorer(Scorer):
 
-    def __init__(self, power_t:int, X: Sequence[str], initial_weight:float, base:str, learning_rate:float, l2:float, sgd:str, bl:str):
+    def __init__(self, power_t:int, X: Sequence[str], initial_weight:float, base:str, learning_rate:float, l2:float, sgd:str):
         
-        self.args = (power_t,X,initial_weight,base,learning_rate,l2,sgd,bl)
+        self.args = (power_t,X,initial_weight,base,learning_rate,l2,sgd)
         options = [
             "--quiet",
             f"-b {bits}",
@@ -51,7 +51,6 @@ class RankScorer(Scorer):
             raise Exception('unrecognized sgd parameter')
 
         self._base = base
-        self._bl   = bl
         self.vw    = VowpalMediator().init_learner(" ".join(options), 0)
         self.t     = 0
         self.rng   = CobaRandom(1)
@@ -60,30 +59,24 @@ class RankScorer(Scorer):
         return (type(self), self.args)
 
     def predict(self, query_key, memory_keys):
-
-        values = []
-        for memory_key in memory_keys:
-            example, base = self._make_example(query_key, memory_key, None, None)
-            values.append(base+self.vw.predict(example))
-
-        return values
+        return [ 1-math.exp(-self.vw.predict(self._make_example(query_key, key, None, None))) for key in memory_keys]
 
     def update(self, query_key, memory_keys, memory_errs, weight):
 
         assert len(memory_keys) == len(memory_errs)
-        if len(memory_keys) < 2: return
+        if len(memory_keys) <2 : return
 
-        tie_breakers = (self.rng.random() for _ in count())
+        tie_breakers = self.rng.randoms(len(memory_keys))
+        scores       = self.predict(query_key, memory_keys)
 
-        ranked_preferences = self.predict(query_key, memory_keys)
-        best_preferrence   = list(sorted(zip(ranked_preferences, memory_errs, tie_breakers, memory_keys)))[0]
-        
-        ranked_alternatives = list(sorted(zip(memory_errs, ranked_preferences, tie_breakers, memory_keys)))
-        best_alternative    = ranked_alternatives[1 if ranked_alternatives[0][3] is best_preferrence[3] else 0]
+        top1_by_score = list(sorted(zip(scores, memory_errs, tie_breakers, memory_keys)))[0]
+        top2_by_error = list(sorted(zip(memory_errs, scores, tie_breakers, memory_keys)))[0:2]
+
+        best_alternative = top2_by_error[0 if top2_by_error[1][3] is top1_by_score[3] else 1]
 
         # "what the scorer wanted to do": scorers preferred memory for query
-        preferred_key = best_preferrence[3]
-        preferred_err = best_preferrence[1]
+        preferred_key = top1_by_score[3]
+        preferred_err = top1_by_score[1]
 
         # "what the scorer could have done better": best memory for query when memory != preferred
         alternative_key = best_alternative[3]
@@ -98,8 +91,8 @@ class RankScorer(Scorer):
         self.t += 1
 
         examples = [
-            self._make_example(query_key, preferred_key, preferred_label, update_weight)[0],
-            self._make_example(query_key, alternative_key, alternative_label, update_weight)[0]
+            self._make_example(query_key, preferred_key, preferred_label, update_weight),
+            self._make_example(query_key, alternative_key, alternative_label, update_weight)
         ]
 
         for example in self.rng.shuffle(examples): self.vw.learn(example)
@@ -114,7 +107,7 @@ class RankScorer(Scorer):
         else:
             return [ abs(v1-v2) for v1,v2 in zip(x1,x2) ]
 
-    def _make_example(self, query_key, memory_key, label, weight) -> Tuple[pyvw.example,float]:
+    def _make_example(self, query_key, memory_key, label, weight) -> pyvw.example:
 
         diff_x = self._diff_features(query_key.context, memory_key.context)
         diff_a = self._diff_features(query_key.action, memory_key.action)
@@ -137,7 +130,7 @@ class RankScorer(Scorer):
         if query_key == memory_key:
             assert base == 0
 
-        label = f"{0 if label is None else label} {0 if weight is None else weight} {base if self._bl == 'internal' else 0}"
+        label = f"{0 if label is None else label} {0 if weight is None else weight} {base}"
         
         example = self.vw.make_example({'x': diff_x, 'a': diff_a}, label)
 
@@ -145,7 +138,7 @@ class RankScorer(Scorer):
         #list(example.iter_features())
         #[ (i,self.vw.get_weight(i)) for i in reversed(range(self.vw.num_weights())) if self.vw.get_weight(i) != 0]
 
-        return example, (base if self._bl == 'external' else 0)
+        return example
 
     def _cos_dist(self, query_key, memory_key) -> float:
 

@@ -1,10 +1,9 @@
-from code import interact
+from itertools import count
 from typing import Tuple
 
 import numpy as np
 from sklearn.decomposition import TruncatedSVD
 
-from coba.encodings import OneHotEncoder
 from coba.environments import LambdaSimulation, EnvironmentFilter, SimulatedInteraction
 from coba.random import CobaRandom
 
@@ -23,7 +22,7 @@ class LocalSyntheticSimulation(LambdaSimulation):
         n_contexts: int = 200,
         n_context_feats: int = 2,
         n_actions: int = 10,
-        seed: int = 1) -> None:
+        seed: int = 2) -> None:
         """Instantiate a LocalSyntheticSimulation.
 
         Args:
@@ -45,38 +44,45 @@ class LocalSyntheticSimulation(LambdaSimulation):
         rng = CobaRandom(self._seed)
         np.random.seed(self._seed)
 
-        vec = np.random.randn(n_contexts, n_context_feats)
-        vec /= np.linalg.norm(vec, axis=0)
+        if n_context_feats == 1:
+            contexts = list(map(float,np.random.randn(n_contexts)))
+        else:
+            vec = np.random.randn(n_contexts, n_context_feats)
+            vec /= np.linalg.norm(vec, axis=0)
+            contexts = [ tuple(map(float,v)) for v in vec ]
+ 
+        action_sets = [ list(map(float,np.random.randn(2))) for _ in range(n_contexts) ]
+        rewards     = {}
 
-        contexts = [ tuple(v) for v in vec ]
-        actions  = OneHotEncoder().fit_encodes(range(n_actions))
-        rewards  = {}
+        sim_contexts    = []
+        sim_action_sets = []
+        sim_rewards     = []
 
-        sim_contexts = []
-        sim_rewards  = {}
+        noise = iter((.01*rng.random() for _ in count()))
 
-        for c in contexts:
-            sim_contexts.extend([c]*n_examples_per)
+        for context, action_set in zip(contexts,action_sets):
 
-        for context in contexts:
-            for action in actions:
-                rewards[(context,action)] = rng.random()
-        
-        for i,c in enumerate(sim_contexts):
-            for action in actions:
-                sim_rewards[(i,action)] = rewards[(c,action)]
+            rewards = rng.randoms(len(action_sets))
 
-        def context_generator(index:int, rng: CobaRandom):
-            #return sim_contexts[index]
-            return tuple([ c + 0.01*rng.random() for c in sim_contexts[index] ])
+            for _ in range(n_examples_per):
+                
+                noisy_context = context+next(noise) if n_context_feats==1 else tuple([c+next(noise) for c in context])
+                noisy_action_set = [ a +next(noise) for a in action_set ]
 
-        def action_generator(index:int, context:Tuple[float,...], rng: CobaRandom):
-            return actions
+                sim_contexts.append(noisy_context)
+                sim_action_sets.append(noisy_action_set)
+                sim_rewards.append(dict(zip(noisy_action_set,rewards)))
 
-        def reward_function(index:int, context:Tuple[float,...], action: Tuple[int,...], rng: CobaRandom):
-            return sim_rewards[(index,action)]
+        def context_generator(index):
+            return sim_contexts[index]
 
-        return super().__init__(n_examples_per*n_contexts, context_generator, action_generator, reward_function, seed)
+        def action_generator(index, context):
+            return sim_action_sets[index]
+
+        def reward_function(index, context, action):
+            return sim_rewards[index][action]
+
+        return super().__init__(n_examples_per*n_contexts, context_generator, action_generator, reward_function)
 
     @property
     def params(self):

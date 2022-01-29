@@ -1,13 +1,10 @@
 import time
 import math
 
-from statistics import mean
-
 from typing import Hashable, Sequence, Dict, Any
 
 from memory import CMT
 
-from coba.contexts import LearnerContext
 from coba.encodings import InteractionsEncoder
 
 logn = 500
@@ -90,7 +87,7 @@ class MemorizedLearner:
 
         memory_key = MemoryKey(context, action)
 
-        self._cmt.update(key=memory_key, outcome=reward, weight=1)
+        self._cmt.update(key=memory_key, outcome=reward, weight=1/(n_actions*probability))
         self._cmt.insert(key=memory_key, value=reward, weight=1/(n_actions*probability))
 
         self._times[1] += time.time()-learn_start

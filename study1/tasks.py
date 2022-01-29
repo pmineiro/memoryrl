@@ -1,6 +1,8 @@
 from itertools import tee
 from typing import Tuple, Iterable
 
+from matplotlib import pyplot as plt
+
 from learners import MemorizedLearner
 from coba.learners import Learner
 from coba.environments import Interaction
@@ -26,5 +28,15 @@ class FinalPrintEvaluationTask(EvaluationTask):
         # if isinstance(learner, MemorizedLearner):
         #     print(f"s: {learner._cmt.f.t}")
         #     print(f"r: {[n.g.t for n in learner._cmt.nodes if n.g]}")
+
+        # if isinstance(learner,MemorizedLearner):
+        #     learner._cmt.leaf_by_key.items()
+
+        #     for node in learner._cmt.nodes:
+        #         if node and node.memories:
+        #             x,y = tuple(zip(*[ (k.context[0],k.action[0]) for k in node.memories.keys()]))
+        #             plt.scatter(x,y)
+
+        #     plt.show()
 
         return d
