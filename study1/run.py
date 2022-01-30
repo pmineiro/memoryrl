@@ -29,7 +29,7 @@ if __name__ == '__main__':
 
    XLs      = [ [] ]
    XSs      = [ [] ]
-   cs       = [ ConstSplitter(300) ]
+   cs       = [ ConstSplitter(100) ]
    ds       = [ 1,2 ]
    alphas   = [ .25,.5 ]
    init_ws  = [ 0 ]
@@ -79,9 +79,17 @@ if __name__ == '__main__':
       #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,XS,w,base,lr,l2,sgd), c=c, d=d, alpha=alpha, v=1)))
       #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,XS,w,base,lr,l2,sgd), c=c, d=d, alpha=alpha, v=2)))
 
-   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=2, alpha=0.25, v=2)))
-   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=1, alpha=0.50, v=2)))
-   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=1, alpha=0.25, v=1)))
+   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=2, alpha=0.25, v=2)))
+   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=2)))
+   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=1, alpha=0.25, v=1)))
+
+   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=2, alpha=0.25, v=2)))
+   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=2)))
+   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=1, alpha=0.25, v=1)))
+
+   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa","xxa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=2, alpha=0.25, v=2)))
+   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa","xxa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=2)))
+   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa","xxa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=1, alpha=0.25, v=1)))
 
    #environments = Environments([LocalSyntheticSimulation(20, n_context_feats=1, n_actions=2, n_contexts=50)]).binary().shuffle([2]).take(1000)
    environments = Environments.from_openml(554, cat_as_str=True).filter(MNIST_LabelFilter(['9','4'])).filter(MNIST_SVD(30)).scale("min","minmax").shuffle([1]).take(1000)

@@ -44,7 +44,7 @@ class CMT:
         v:int = 1,
         rng:CobaRandom= CobaRandom(1337)):
 
-        self.max_mem      = max_mem
+        self.max_mem   = max_mem
         self.g_factory = router
         self.f         = scorer
         self.alpha     = alpha
@@ -145,17 +145,19 @@ class CMT:
             self.leaf_by_key[insert_key] = leaf
             leaf.memories[insert_key] = insert_val
 
-            leaf.n+=1
+            leaf.n += 1
 
             if not self.splitting:
                 parent = leaf.parent
                 while parent is not None:
-                    parent.n +=1
+                    parent.n += 1
                     parent = parent.parent
+
+            assert leaf.n == len(leaf.memories)
 
         else:
             self.splitting   = True
-            print(f"SPLITTING {self.root.n}")
+            print(f"SPLITTING {self.root.n} {leaf.id}")
             new_parent       = leaf
             new_parent.left  = Node(next(self.node_ids), new_parent)
             new_parent.right = Node(next(self.node_ids), new_parent)
@@ -164,16 +166,23 @@ class CMT:
             self.nodes.append(new_parent.left)
             self.nodes.append(new_parent.right)
 
-            insert_keys = list(leaf.memories.keys())
-            insert_vals = list(leaf.memories.values())
+            split_keys = list(leaf.memories.keys())
+            split_vals = list(leaf.memories.values())
             
-            for insert_key in insert_keys:
-                self.leaf_by_key.pop(insert_key).memories.pop(insert_key)
+            for _ in range(1): # it is possible by adjusting this to re-split the same memories multiple times
+                
+                #split_keys,split_vals = tuple(zip(*self.rng.shuffle(list(zip(split_keys,split_vals)))))
 
-            for mem_key, mem_val in zip(insert_keys,insert_vals):
-                self.insert(mem_key, mem_val, 1, node=new_parent)
+                for split_key in split_keys:
+                    split_leaf = self.leaf_by_key.pop(split_key)
+                    split_leaf.n-=1
+                    split_leaf.memories.pop(split_key)
+
+                for split_key, split_val in zip(split_keys,split_vals):
+                    self.insert(split_key, split_val, 1, node=new_parent)
+            
+            leaf.n += len(split_keys)
             self.splitting = False
-
             self.insert(insert_key, insert_val, weight, node=new_parent)
         
         return self.leaf_by_key[insert_key]
@@ -183,12 +192,16 @@ class CMT:
         _d = self.d if self.d >= 1 else 1 if self.rng.random() < self.d else 0
 
         for _ in range(_d):
+
             x = self.rng.choice(list(self.leaf_by_key.keys()))
             o = self.leaf_by_key[x].memories[x]
 
             self.rerouting = True
+            old_n = self.root.n
             self.delete(x)
+            assert self.root.n == old_n-1
             self.insert(x, o, 1)
+            assert self.root.n == old_n
             self.rerouting = False
 
     def __path(self, key: MemKey, node: Node) -> Iterable[Node]:
@@ -240,20 +253,21 @@ class CMT:
 
         while not node.is_leaf:
 
-            left_key, left_val, left_score = self.__query(key, node.left)
-            right_key, right_val, right_score = self.__query(key, node.right)
+            _, left_val, left_score = self.__query(key, node.left)
+            _, right_val, right_score = self.__query(key, node.right)
 
             if self.v == 1 :
                 left_loss  = (val-left_val)**2 if left_val is not None else 0
                 right_loss = (val-right_val)**2 if right_val is not None else 0
 
             if self.v == 2:
-                left_loss = left_score if left_score is not None else 0
+                left_loss  = left_score if left_score is not None else 0
                 right_loss = right_score if right_score is not None else 0
 
             if mode == "update": 
                 direction = node.g.predict(key)
 
+            #this if statement seems to improve our performance a 
             if self.splitting or self.rerouting or mode == "update":
                 self.__update_router(node, key, left_loss, right_loss, weight)
 
