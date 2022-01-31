@@ -30,11 +30,11 @@ if __name__ == '__main__':
    XLs      = [ [] ]
    XSs      = [ [] ]
    cs       = [ ConstSplitter(100) ]
-   ds       = [ 1,2 ]
-   alphas   = [ .25,.5 ]
+   ds       = [ 2 ]
+   alphas   = [ .25 ]
    init_ws  = [ 0 ]
    sgds     = [ 'coin' ]
-   bases    = [ "exp", "l1" ]
+   bases    = [ 'exp' ]
    lrs      = [ .01 ]
    l2s      = [ .5 ]
 
@@ -63,35 +63,17 @@ if __name__ == '__main__':
    #adding in an l2 term prevents us from cratering...
    #low learning rate also seems to help...
 
-   # learners = [
-   #    EpsilonBanditLearner(epsilon)
-   # ]
-
    learners = [
       VowpalEpsilonLearner(epsilon),
       MemorizedLearner(epsilon, CMT(6000, None, MetricScorer("l1"), c=ConstSplitter(20000), d=1, alpha=None)),
    ]
 
-   # for c in cs:
-   #    learners.append(MemorizedLearner(epsilon, CMT(6000, RandomRouter(), MetricScorer("l2"), c=c, d=1, alpha=0.25)))
-
-   #for c, d, alpha, XL, XS, w, base, lr, l2, sgd in itertools.product(cs,ds, alphas, XLs, XSs, init_ws, bases, lrs, l2s, sgds):
-      #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,XS,w,base,lr,l2,sgd), c=c, d=d, alpha=alpha, v=1)))
-      #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,XS,w,base,lr,l2,sgd), c=c, d=d, alpha=alpha, v=2)))
-
-   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=2, alpha=0.25, v=2)))
-   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=2)))
-   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=1, alpha=0.25, v=1)))
-
-   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=2, alpha=0.25, v=2)))
-   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=2)))
-   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=1, alpha=0.25, v=1)))
-
-   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa","xxa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=2, alpha=0.25, v=2)))
-   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa","xxa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=2)))
-   #learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,["xa","xxa"],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=ConstSplitter(300), d=1, alpha=0.25, v=1)))
+   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=(2,1))))
+   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=(1,1))))
+   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=(2,2))))
+   learners.append(MemorizedLearner(epsilon, CMT(6000, LogisticRouter(0,[],True,0), RankScorer(0,[],0,"exp",.01,.5,"coin"), c=cs[0], d=2, alpha=0.25, v=(1,2))))
 
    #environments = Environments([LocalSyntheticSimulation(20, n_context_feats=1, n_actions=2, n_contexts=50)]).binary().shuffle([2]).take(1000)
-   environments = Environments.from_openml(554, cat_as_str=True).filter(MNIST_LabelFilter(['9','4'])).filter(MNIST_SVD(30)).scale("min","minmax").shuffle([1]).take(1000)
+   environments = Environments.from_openml(554, cat_as_str=True).filter(MNIST_LabelFilter(['9','4'])).filter(MNIST_SVD(30)).scale("min","minmax").shuffle([1])
 
-   Experiment(environments, learners, environment_task=SimpleEnvironmentTask(), evaluation_task=FinalPrintEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners()
+   Experiment(environments, learners, environment_task=SimpleEnvironmentTask(), evaluation_task=FinalPrintEvaluationTask()).config(**config).evaluate(log).filter_fin().plot_learners(sort="reward")

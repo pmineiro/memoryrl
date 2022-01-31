@@ -8,6 +8,10 @@ from splitters import Splitter
 
 from coba.random import CobaRandom
 
+from sklearn.decomposition import TruncatedSVD, PCA
+import scipy.sparse as sp
+import numpy as np
+
 MemKey = Hashable
 MemVal = Any
 Memory = Tuple[MemKey,MemVal]
@@ -41,7 +45,7 @@ class CMT:
         c:Splitter,
         d:int,
         alpha:float=0.25, 
-        v:int = 1,
+        v:Tuple[int,...] = (1,),
         rng:CobaRandom= CobaRandom(1337)):
 
         self.max_mem   = max_mem
@@ -157,7 +161,6 @@ class CMT:
 
         else:
             self.splitting   = True
-            print(f"SPLITTING {self.root.n} {leaf.id}")
             new_parent       = leaf
             new_parent.left  = Node(next(self.node_ids), new_parent)
             new_parent.right = Node(next(self.node_ids), new_parent)
@@ -168,20 +171,40 @@ class CMT:
 
             split_keys = list(leaf.memories.keys())
             split_vals = list(leaf.memories.values())
-            
-            for _ in range(1): # it is possible by adjusting this to re-split the same memories multiple times
-                
-                #split_keys,split_vals = tuple(zip(*self.rng.shuffle(list(zip(split_keys,split_vals)))))
 
+            if self.v[1] == 1:
                 for split_key in split_keys:
-                    split_leaf = self.leaf_by_key.pop(split_key)
-                    split_leaf.n-=1
-                    split_leaf.memories.pop(split_key)
+                    self.leaf_by_key.pop(split_key).memories.pop(split_key)
 
                 for split_key, split_val in zip(split_keys,split_vals):
                     self.insert(split_key, split_val, 1, node=new_parent)
-            
-            leaf.n += len(split_keys)
+
+            if self.v[1] == 2:
+                if sp.issparse(split_keys[0].features):
+                    features_mat = sp.vstack([k.features for k in split_keys])
+                    features_mat -= sp.vstack([sp.csr_matrix(features_mat.mean(axis=0))]*101) #center the sparse matrix
+                    first_component = TruncatedSVD(n_components=1).fit(features_mat).components_
+                    first_projections = (first_component @ features_mat.T).squeeze().tolist()
+                else:
+                    first_component = PCA(n_components=1).fit(np.vstack([k.features for k in split_keys])).components_
+                    first_projections = (first_component @ np.vstack([k.features for k in split_keys]).T).squeeze().tolist()
+
+                median_projection = np.median(first_projections)
+                split_labels      = [ -1 if p < median_projection else 1 for p in first_projections]
+
+                for split_key in split_keys:
+                    self.leaf_by_key.pop(split_key).memories.pop(split_key)
+
+                for _ in range(3):
+                    for split_key,split_label in self.rng.shuffle(list(zip(split_keys,split_labels))):
+                        new_parent.g.update(split_key, split_label, 1)
+                    
+                for split_key,split_val,label in zip(split_keys,split_vals,split_labels):
+                    container = new_parent.left if label == -1 else new_parent.right                    
+                    container.n +=1
+                    container.memories[split_key] = split_val
+                    self.leaf_by_key[split_key] = container
+
             self.splitting = False
             self.insert(insert_key, insert_val, weight, node=new_parent)
         
@@ -256,11 +279,11 @@ class CMT:
             _, left_val, left_score = self.__query(key, node.left)
             _, right_val, right_score = self.__query(key, node.right)
 
-            if self.v == 1 :
+            if self.v[0] == 1:
                 left_loss  = (val-left_val)**2 if left_val is not None else 0
                 right_loss = (val-right_val)**2 if right_val is not None else 0
 
-            if self.v == 2:
+            if self.v[0] == 2:
                 left_loss  = left_score if left_score is not None else 0
                 right_loss = right_score if right_score is not None else 0
 

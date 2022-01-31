@@ -16,7 +16,17 @@ class MemoryKey:
 
         self.context = InteractionsEncoder(["x"]).encode(x=context)
         self.action  = InteractionsEncoder(["a"]).encode(a=action)
-        
+
+        #self.features = context + ((1,0) if action == '4' else (0,1))
+
+        raw_features =InteractionsEncoder(["x","a"]).encode(x=context,a=action)
+        if isinstance(raw_features,dict):
+            from sklearn.feature_extraction import FeatureHasher
+            self.features = FeatureHasher().fit_transform([raw_features])
+        else:
+            import numpy as np
+            self.features = np.array([raw_features])
+
         self._hash   = hash((context,action))
 
     def __hash__(self) -> int:
