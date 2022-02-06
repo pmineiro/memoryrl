@@ -181,8 +181,8 @@ class CMT:
 
             if self.v[1] == 2:
                 if sp.issparse(split_keys[0].features):
-                    features_mat = sp.vstack([k.features for k in split_keys])
-                    features_mat -= sp.vstack([sp.csr_matrix(features_mat.mean(axis=0))]*101) #center the sparse matrix
+                    features_mat  = sp.vstack([k.features for k in split_keys])
+                    features_mat -= sp.vstack([sp.csr_matrix(features_mat.mean(axis=0))]*len(split_keys)) #center the sparse matrix
                     first_component = TruncatedSVD(n_components=1).fit(features_mat).components_
                     first_projections = (first_component @ features_mat.T).squeeze().tolist()
                 else:
@@ -195,7 +195,7 @@ class CMT:
                 for split_key in split_keys:
                     self.leaf_by_key.pop(split_key).memories.pop(split_key)
 
-                for _ in range(3):
+                for _ in range(10):
                     for split_key,split_label in self.rng.shuffle(list(zip(split_keys,split_labels))):
                         new_parent.g.update(split_key, split_label, 1)
                     

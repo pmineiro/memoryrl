@@ -58,7 +58,7 @@ class LocalSyntheticSimulation(LambdaSimulation):
         sim_action_sets = []
         sim_rewards     = []
 
-        noise = iter((.01*rng.random() for _ in count()))
+        noise = iter((.08*rng.random() for _ in count()))
 
         for context, action_set in zip(contexts,action_sets):
 
