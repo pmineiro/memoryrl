@@ -7,6 +7,17 @@ class Splitter(ABC):
     def __call__(self, n:int) -> int:
         ...
 
+class NeverSplitter(Splitter):
+
+    def __call__(self, n: int) -> int:
+        return float('inf')
+    
+    def __str__(self) -> str:
+        return f"never"
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
 class ConstSplitter(Splitter):
 
     def __init__(self, const: int) -> None:

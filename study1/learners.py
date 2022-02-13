@@ -14,8 +14,14 @@ class MemoryKey:
 
     def __init__(self, context, action) -> None:
 
+        self.c = context
+
         self.context = InteractionsEncoder(["x"]).encode(x=context)
         self.action  = InteractionsEncoder(["a"]).encode(a=action)
+
+        #cheap hack to directly calculate interaction terms differences
+        #self.context = InteractionsEncoder(["x","a","xa","xxa"]).encode(x=context,a=action)
+        #self.action  = []
 
         #self.features = context + ((1,0) if action == '4' else (0,1))
 
@@ -86,6 +92,8 @@ class MemorizedLearner:
         min_p = self._epsilon / len(actions)
         grd_p = (1-self._epsilon)/len(greedy_A)
         
+        #print([ grd_p+min_p if a in greedy_A else min_p for a in actions ])
+
         return [ grd_p+min_p if a in greedy_A else min_p for a in actions ], len(actions)
 
     def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, predict_info: Any) -> None:
