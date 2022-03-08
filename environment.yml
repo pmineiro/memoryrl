@@ -12,6 +12,6 @@ dependencies:
         - pandas
         - matplotlib
         - notebook
-        - vowpalwabbit==8.11.0
+        - vowpalwabbit==9.0.1
         - sklearn
         - coba==4.6.*
