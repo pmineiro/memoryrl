@@ -7,7 +7,8 @@ from coba.random import CobaRandom
 
 import scipy.sparse as sp
 import numpy as np
-from sklearn.decomposition import TruncatedSVD, PCA
+
+from sklearn.decomposition import TruncatedSVD
 
 bits = 20
 
@@ -16,7 +17,7 @@ class Router(ABC):
     @abstractmethod
     def predict(self, query_key) -> int:
         ...
-    
+
     @abstractmethod
     def update(self, query_key, label, weight) -> None:
         ...
@@ -28,34 +29,31 @@ class RouterFactory(ABC):
         ...
 
 class PCARouter(RouterFactory):
+
     class _Router(Router):
 
-        def __init__(self, median, feature_avg, first_component):
-            self.median = median
-            self.feature_avg = feature_avg
+        def __init__(self, median, feature_avgs, first_component):
+            self.median          = median
+            self.feature_avgs    = feature_avgs
             self.first_component = first_component
 
         def predict(self, query_key):
-            value = (self.median - self.first_component @ (query_key.features - self.feature_avg).T).item()
+            value = (self.median - self.first_component @ (query_key.features - self.feature_avgs).T).item()
             return np.sign(value)*(1-np.exp(-abs(value)))
 
         def update(self, query_key, label, weight):
             pass
 
-    def __init__(self, *args, **kwargs) -> None:
-        pass
+    def create(self, keys2split) -> _Router:
 
-    def create(self, split_keys) -> _Router:
-        if sp.issparse(split_keys[0].features):
-            features_mat  = sp.vstack([k.features for k in split_keys])
+        if sp.issparse(keys2split[0].features):
+            features_mat  = sp.vstack([k.features for k in keys2split])
             features_avg  = features_mat.mean(axis=0)
-            features_mat -= sp.vstack([sp.csr_matrix(features_avg)]*len(split_keys))
-            
+            features_mat -= sp.vstack([sp.csr_matrix(features_avg)]*len(keys2split))
         else:
-            features_mat  = np.vstack([k.features for k in split_keys])
+            features_mat  = np.vstack([k.features for k in keys2split])
             features_avg  = features_mat.mean(axis=0)
-            features_mat -= np.vstack([features_avg]*len(split_keys))
-            
+            features_mat -= np.vstack([features_avg]*len(keys2split))
 
         first_component   = TruncatedSVD(n_components=1).fit(features_mat).components_
         first_projections = (first_component @ features_mat.T).squeeze().tolist()
@@ -69,20 +67,25 @@ class LogisticRouter(RouterFactory):
 
     class _Router(Router):
 
-        def __init__(self, power_t, X, coin, l2, seed, base):
+        def __init__(self, X: Sequence[str], base: Router):
+
             options = [
                 "--quiet",
                 f"-b {bits}",
-                f"--power_t {power_t}",
-                "--coin" if coin else "",
+                f"--power_t {0}",
+                f"--random_seed {1}",
+                "--coin",
                 "--noconstant",
-                f"--l2 {l2}",
                 "--loss_function logistic",
                 "--link=glf1",
-                *[f"--interactions {x}" for x in X]
             ]
+ 
+            X = X or ['x','a']
+            if 'x' not in X: options.append("--ignore_linear x")
+            if 'a' not in X: options.append("--ignore_linear a")
+            options.extend([f"--interactions {x}" for x in X if len(x) > 1])
 
-            self.vw = VowpalMediator().init_learner(" ".join(options), 0)
+            self.vw = VowpalMediator().init_learner(" ".join(options), 1)
             self.base = base
 
         def predict(self, query_key):
@@ -95,13 +98,12 @@ class LogisticRouter(RouterFactory):
             label = f"{0 if label is None else label} {0 if weight is None else weight} {self.base.predict(query_key)}"
             return self.vw.make_example({"x": query_key.context, "a": query_key.action}, label)
 
-    def __init__(self, power_t:float=0, X:Sequence[str]=[], coin:bool=True, l2: float=0, seed:int=1) -> None:
-        self._args = (power_t,X,coin,l2,seed)
-        self._rng  = CobaRandom(seed)
+    def __init__(self, X:Sequence[str]=[]) -> None:
+        self._args = (X,)
 
-    def create(self, split_keys) -> _Router:
+    def create(self, keys2split) -> _Router:
 
-        pca_router = PCARouter().create(split_keys)
+        pca_router = PCARouter().create(keys2split)
         new_router = LogisticRouter._Router(*self._args, pca_router)
 
         return new_router
@@ -111,10 +113,10 @@ class LogisticRouter(RouterFactory):
 
 class RandomRouter(RouterFactory,Router):
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self) -> None:
         self._rng = CobaRandom(1)
 
-    def create(self, query_keys) -> 'RandomRouter':
+    def create(self, keys2split) -> 'RandomRouter':
         return self
 
     def predict(self, xraw):

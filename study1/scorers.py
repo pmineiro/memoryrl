@@ -22,34 +22,29 @@ class Scorer(ABC):
 
 class RankScorer(Scorer):
 
-    def __init__(self, power_t:int, X: Sequence[str], initial_weight:float, base:str, learning_rate:float, l2:float, sgd:str):
+    def __init__(self, base:str, X: Sequence[str] = []):
         
-        self.args = (power_t,X,initial_weight,base,learning_rate,l2,sgd)
+        self.args = (base,X)
+        
         options = [
             "--quiet",
             f"-b {bits}",
-            f"--l2 {l2}",
-            f"--power_t {power_t}",
-            f"--initial_weight {initial_weight}",
+            f"--power_t {0}",
+            f"--random_seed {1}",
+            "--coin",            
             "--noconstant",
             "--loss_function squared",
             "--min_prediction 0",
             "--max_prediction 40",
-            f"--learning_rate {learning_rate:0.9f}",
-            *[f"--interactions {x}" for x in X]
         ]
 
-        if sgd == "coin":
-            options += ["--coin" ]
-        elif sgd == "not-norm":
-            options += ["--sgd", "--adaptive", "--invariant"]
-        elif sgd=="none":
-            options += []
-        else:
-            raise Exception('unrecognized sgd parameter')
+        X = X or ['x','a']
+        if 'x' not in X: options.append("--ignore_linear x")
+        if 'a' not in X: options.append("--ignore_linear a")
+        options.extend([f"--interactions {x}" for x in X if len(x) > 1])
 
         self._base = base
-        self.vw    = VowpalMediator().init_learner(" ".join(options), 0)
+        self.vw    = VowpalMediator().init_learner(" ".join(options), 1)
         self.t     = 0
         self.rng   = CobaRandom(1)
 
@@ -94,6 +89,17 @@ class RankScorer(Scorer):
         ]
 
         for example in self.rng.shuffle(examples): self.vw.learn(example)
+
+    def super(self, query_key, memory_keys, outcome, weight):
+
+        tie_breakers = self.rng.randoms(len(memory_keys))
+        scores       = self.predict(query_key, memory_keys)
+
+        top1_by_score = list(sorted(zip(scores, tie_breakers, memory_keys)))[0]
+
+        top_key = top1_by_score[2]
+
+        self.vw.learn(self._make_example(query_key, top_key, outcome, weight))
 
     def _diff_features(self, x1, x2):
 
@@ -194,7 +200,7 @@ class RankScorer2(Scorer):
             raise Exception('unrecognized sgd parameter')
 
         self._base = base
-        self.vw    = VowpalMediator().init_learner(" ".join(options), 0)
+        self.vw    = VowpalMediator().init_learner(" ".join(options), 1)
         self.t     = 0
         self.rng   = CobaRandom(1)
 
