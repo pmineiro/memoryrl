@@ -20,16 +20,16 @@ from coba.learners     import VowpalEpsilonLearner, CorralLearner, EpsilonBandit
 
 experiment = 'full6'
 json       = f"./study1/experiments/{experiment}.json"
-log        = f"./study1/outcomes/{experiment}_31.log.gz"
-config     = {"processes": 128, "chunk_by":'task' }
+log        = None#f"./study1/outcomes/{experiment}_31.log.gz"
+config     = {"processes": 8, "chunk_by":'task' }
 
 epsilon    = 0.1
 
 if __name__ == '__main__':
 
    learners = [
-      MemorizedLearner (epsilon, CMT(6000, LogisticRouter(["x"]), RankScorer("exp", ['xa']), c=ConstSplitter(100), v=(2,), d=1, alpha=0.25)),
-      MemorizedLearner2(epsilon, CMT(6000, LogisticRouter(["x"]), RankScorer("exp", ['xa']), c=ConstSplitter(100), v=(2,), d=1, alpha=0.25)),
+      MemorizedLearner (epsilon, CMT(6000, PCARouter(), RankScorer("exp"), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
+      MemorizedLearner2(epsilon, CMT(6000, PCARouter(), RankScorer("exp"), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
    ]
 
    #learners.append(old_learner_2)
