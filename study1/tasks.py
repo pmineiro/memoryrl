@@ -3,7 +3,7 @@ from typing import Tuple, Iterable
 
 from matplotlib import pyplot as plt
 
-from learners import MemorizedLearner
+from learners import MemorizedLearner1
 from coba.learners import Learner
 from coba.environments import Interaction
 from coba.experiments import EvaluationTask, OnlineOnPolicyEvalTask

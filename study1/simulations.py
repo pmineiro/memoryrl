@@ -110,10 +110,10 @@ class MNIST_LabelFilter(EnvironmentFilter):
 
     def filter(self, interactions):
         for interaction in interactions:
-            if interaction.actions[interaction.kwargs["rewards"].index(1)] in self._labels:
+            if interaction.actions[interaction.rewards.index(1)] in self._labels:
                 
                 label_indexes = [ interaction.actions.index(label) for label in self._labels ]
-                rewards       = [ interaction.kwargs["rewards"][i] for i in label_indexes ]
+                rewards       = [ interaction.rewards[i] for i in label_indexes ]
 
                 yield SimulatedInteraction(interaction.context, self._labels, rewards=rewards)
 
@@ -133,7 +133,7 @@ class MNIST_SVD(EnvironmentFilter):
 
         for interaction in interactions:
             rows.append(interaction.context)
-            stuff.append((interaction.actions, interaction.kwargs["rewards"]))
+            stuff.append((interaction.actions, interaction.rewards))
 
         svd = TruncatedSVD(n_components=self._rank, n_iter=5, random_state=self._seed)
         Xprimes = svd.fit_transform(np.array(rows))

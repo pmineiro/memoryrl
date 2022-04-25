@@ -32,38 +32,43 @@ class PCARouter(RouterFactory):
 
     class _Router(Router):
 
-        def __init__(self, median, feature_avgs, first_component):
+        def __init__(self, features, median, feature_avgs, first_component):
+            self.features        = features
             self.median          = median
             self.feature_avgs    = feature_avgs
             self.first_component = first_component
 
         def predict(self, query_key):
-            value = (self.median - self.first_component @ (query_key.features - self.feature_avgs).T).item()
+            
+            value = (self.median - self.first_component @ (query_key.features(self.features) - self.feature_avgs).T).item()
             return np.sign(value)*(1-np.exp(-abs(value)))
 
         def update(self, query_key, label, weight):
             pass
 
+    def __init__(self, features = ['x']) -> None:
+        self.features = features
+
     def create(self, keys2split) -> _Router:
 
-        if sp.issparse(keys2split[0].features):
-            features_mat  = sp.vstack([k.features for k in keys2split])
+        if sp.issparse(keys2split[0].features(self.features)):
+            features_mat  = sp.vstack([k.features(self.features) for k in keys2split])
             features_avg  = features_mat.mean(axis=0)
             features_mat -= sp.vstack([sp.csr_matrix(features_avg)]*len(keys2split))
         else:
-            features_mat  = np.vstack([k.features for k in keys2split])
+            features_mat  = np.vstack([k.features(self.features) for k in keys2split])
             features_avg  = features_mat.mean(axis=0)
             features_mat -= np.vstack([features_avg]*len(keys2split))
 
         first_component   = TruncatedSVD(n_components=1).fit(features_mat).components_
         first_projections = (first_component @ features_mat.T).squeeze().tolist()
 
-        return PCARouter._Router(np.median(first_projections), features_avg, first_component)
+        return PCARouter._Router(self.features, np.median(first_projections), features_avg, first_component)
 
     def __str__(self) -> str:
-        return f"PCA"
+        return f"PCA({self.features})"
 
-class LogisticRouter(RouterFactory):
+class LogRouter(RouterFactory):
 
     class _Router(Router):
 
@@ -104,7 +109,7 @@ class LogisticRouter(RouterFactory):
     def create(self, keys2split) -> _Router:
 
         pca_router = PCARouter().create(keys2split)
-        new_router = LogisticRouter._Router(*self._args, pca_router)
+        new_router = LogRouter._Router(*self._args, pca_router)
 
         return new_router
 

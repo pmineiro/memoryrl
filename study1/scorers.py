@@ -22,28 +22,32 @@ class Scorer(ABC):
 
 class RankScorer(Scorer):
 
-    def __init__(self, base:str, X: Sequence[str] = []):
-        
-        self.args = (base,X)
-        
+    def __init__(self, base:str, X: Sequence[str] = [],v2=False):
+
+        self.args = (base,X,v2)
+
+        X = X or ['x','a']
+
         options = [
             "--quiet",
             f"-b {bits}",
             f"--power_t {0}",
             f"--random_seed {1}",
-            "--coin",            
+            "--coin",
             "--noconstant",
             "--loss_function squared",
             "--min_prediction 0",
             "--max_prediction 40",
         ]
 
-        X = X or ['x','a']
-        if 'x' not in X: options.append("--ignore_linear x")
-        if 'a' not in X: options.append("--ignore_linear a")
-        options.extend([f"--interactions {x}" for x in X if len(x) > 1])
+        if not v2:
+            if 'x' not in X: options.append("--ignore_linear x")
+            if 'a' not in X: options.append("--ignore_linear a")
+            options.extend([f"--interactions {x}" for x in X if len(x) > 1])
 
+        self._X    = X
         self._base = base
+        self._v2   = v2
         self.vw    = VowpalMediator().init_learner(" ".join(options), 1)
         self.t     = 0
         self.rng   = CobaRandom(1)
@@ -101,7 +105,7 @@ class RankScorer(Scorer):
 
         self.vw.learn(self._make_example(query_key, top_key, outcome, weight))
 
-    def _diff_features(self, x1, x2):
+    def _sub(self, x1, x2):
 
         x1 = x1
         x2 = x2
@@ -113,8 +117,12 @@ class RankScorer(Scorer):
 
     def _make_example(self, query_key, memory_key, label, weight) -> pyvw.example:
 
-        diff_x = self._diff_features(query_key.context, memory_key.context)
-        diff_a = self._diff_features(query_key.action, memory_key.action)
+        if not self._v2:
+            diff_x = self._sub(query_key.raw(['x']), memory_key.raw(['x']))
+            diff_a = self._sub(query_key.raw(['a']), memory_key.raw(['a']))
+        else:
+            diff_x = self._sub(query_key.raw(self._X), memory_key.raw(self._X))
+            diff_a = []
 
         if self._base == "none":
             base = 0
@@ -127,7 +135,7 @@ class RankScorer(Scorer):
             assert 0 <= base and base <= 1
         elif self._base == "exp":
             base = 1-math.exp(-self._l2_norm(diff_x, diff_a))
-            assert 0 <= base and base <= 1        
+            assert 0 <= base and base <= 1
         else:
             raise Exception("Unrecognized Base")
 
@@ -136,7 +144,10 @@ class RankScorer(Scorer):
 
         label = f"{0 if label is None else label} {0 if weight is None else weight} {base}"
         
-        example = self.vw.make_example({'x': diff_x, 'a': diff_a}, label)
+        if not self._v2:
+            example = self.vw.make_example({'x': diff_x, 'a': diff_a}, label)
+        else:
+            example = self.vw.make_example({'x': diff_x }, label)
 
         #example.get_feature_number()
         #list(example.iter_features())

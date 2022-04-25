@@ -15,34 +15,39 @@ class MemoryKey:
 
     def __init__(self, context, action) -> None:
 
-        self.c = context
-
-        self.context = InteractionsEncoder(["x"]).encode(x=context)
-        self.action  = InteractionsEncoder(["a"]).encode(a=action)
-
-        #cheap hack to directly calculate interaction terms differences
-        #self.context = InteractionsEncoder(["x","a","xa","xxa"]).encode(x=context,a=action)
-        #self.action  = []
-
-        #self.features = context + ((1,0) if action == '4' else (0,1))
-
-        raw_features =InteractionsEncoder(["x"]).encode(x=context,a=action)
-        if isinstance(raw_features,dict):
-            from sklearn.feature_extraction import FeatureHasher
-            self.features = FeatureHasher().fit_transform([raw_features])
-        else:
-            import numpy as np
-            self.features = np.array([raw_features])
+        self.x = context
+        self.a = action
+        
+        self.raw_cache = {}
+        self.np_cache = {}
 
         self._hash = hash((context,action))
+
+    def raw(self, features):
+        features = tuple(features)
+        if features not in self.raw_cache:
+            self.raw_cache[features] = InteractionsEncoder(features).encode(x=self.x,a=self.a)
+        return self.raw_cache[features]
+
+    def features(self, features):
+        features = tuple(features)
+        if features not in self.np_cache:
+            raw_features=self.raw(features)
+            if isinstance(raw_features,dict):
+                from sklearn.feature_extraction import FeatureHasher
+                self.np_cache[features] = FeatureHasher().fit_transform([raw_features])
+            else:
+                import numpy as np
+                self.np_cache[features] = np.array([raw_features])
+        return self.np_cache[features]
 
     def __hash__(self) -> int:
         return self._hash
 
     def __eq__(self, __o: object) -> bool:
-        return isinstance(__o, MemoryKey) and self.context == __o.context and self.action == __o.action
+        return isinstance(__o, MemoryKey) and self.x == __o.x and self.a == __o.a
 
-class MemorizedLearner:
+class MemorizedLearner1:
 
     def __init__(self, epsilon: float, cmt: CMT) -> None:
 
@@ -55,7 +60,7 @@ class MemorizedLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'memorized_taken','e':self._epsilon, **self._cmt.params }
+        return { 'family': 'memorized_taken1','e':self._epsilon, **self._cmt.params }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -95,9 +100,8 @@ class MemorizedLearner:
         """Learn about the result of an action that was taken in a context."""
         n_actions = predict_info
 
-        
         memory_key = MemoryKey(context, action)
-        
+
         self._cmt.update(key=memory_key, outcome=reward, weight=1/(n_actions*probability))
 
         learn_start = time.time()
