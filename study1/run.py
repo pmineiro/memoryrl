@@ -20,7 +20,7 @@ from coba.learners     import VowpalEpsilonLearner, CorralLearner, EpsilonBandit
 #experiment = 'full6'
 #json       = f"./study1/experiments/{experiment}.json"
 #log        = f"./study1/outcomes/{experiment}_31.log.gz"
-log        = None#f"./study1/outcomes/openml-benchmarks.log.gz"
+log        = "./study1/outcomes/full-openml-class-1.log.gz"
 config     = {"processes": 8, "chunk_by":'task' }
 
 epsilon    = 0.1
@@ -30,9 +30,10 @@ if __name__ == '__main__':
    learners = [
       RandomLearner(),
       EpsilonBanditLearner(epsilon),
-      VowpalEpsilonLearner(epsilon, features=["xa"]),
-      MemorizedLearner1(epsilon, CMT(6000, PCARouter(['xa']), RankScorer("exp",['x','a','xa'],True), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
-      MemorizedLearner2(epsilon, CMT(6000, PCARouter(['xa']), RankScorer("exp",['x','a','xa'],True), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
+      VowpalEpsilonLearner(epsilon, features=["a","xa"]),
+      VowpalEpsilonLearner(epsilon, features=["a","xa","xxa"]),
+      MemorizedLearner1(epsilon, CMT(6000, PCARouter(['x']), RankScorer("exp",['x','a','xa'],True), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
+      MemorizedLearner2(epsilon, CMT(6000, PCARouter(['x']), RankScorer("exp",['x','a','xa'],True), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
       #MemorizedLearner1(epsilon, CMT(6000, PCARouter(['xa']), RankScorer("exp",['x','a','xa'],False), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
       #MemorizedLearner2(epsilon, CMT(6000, PCARouter(['xa']), RankScorer("exp",['x','a','xa'],False), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
       #MemorizedLearner2(epsilon, CMT(6000, PCARouter(['xa']), RankScorer("exp",['xa'],False), c=ConstSplitter(100), v=(2,), d=0, alpha=0)),
