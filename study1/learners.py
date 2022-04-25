@@ -110,7 +110,7 @@ class MemorizedLearner1:
 
 class MemorizedLearner2:
 
-    def __init__(self, epsilon: float, cmt: CMT) -> None:
+    def __init__(self, epsilon: float, cmt: CMT, X:str) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 
@@ -118,13 +118,19 @@ class MemorizedLearner2:
         self._i       = 0
         self._cmt     = cmt
         self._times   = [0, 0]
+        self._X       = X
 
-        args = f"--quiet --cb_explore_adf --epsilon {epsilon} --ignore_linear x --interactions xa --random_seed {1}"
+        if X == 'xa':
+            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --ignore_linear x --interactions xa --random_seed {1}"
+
+        if X == 'xxa':
+            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --ignore_linear x --interactions xa --interactions xxa --random_seed {1}"
+
         self._vw = VowpalMediator().init_learner(args,4)
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'memorized_taken2','e':self._epsilon, **self._cmt.params }
+        return { 'family': 'memorized_taken2', 'e': self._epsilon, **self._cmt.params, "X": self._X }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
