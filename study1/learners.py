@@ -121,10 +121,10 @@ class MemorizedLearner2:
         self._X       = X
 
         if X == 'xa':
-            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --ignore_linear x --interactions xa --random_seed {1}"
+            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --coin --ignore_linear x --interactions xa --random_seed {1}"
 
         if X == 'xxa':
-            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --ignore_linear x --interactions xa --interactions xxa --random_seed {1}"
+            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --coin --ignore_linear x --interactions xa --interactions xxa --random_seed {1}"
 
         self._vw = VowpalMediator().init_learner(args,4)
 
