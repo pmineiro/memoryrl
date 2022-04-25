@@ -190,4 +190,4 @@ class MemorizedLearner2:
             return [ff for f in features for ff in (f if isinstance(f,tuple) else [f]) ]
 
     def __reduce__(self):
-        return (type(self), (self._epsilon, self._cmt))
+        return (type(self), (self._epsilon, self._cmt, self._X))
