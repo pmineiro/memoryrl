@@ -110,7 +110,7 @@ class MemorizedLearner1:
 
 class MemorizedLearner2:
 
-    def __init__(self, epsilon: float, cmt: CMT, X:str) -> None:
+    def __init__(self, epsilon: float, cmt: CMT, X:str, coin:bool, constant:bool) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 
@@ -118,19 +118,25 @@ class MemorizedLearner2:
         self._i       = 0
         self._cmt     = cmt
         self._times   = [0, 0]
-        self._X       = X
+        self._args    = (X, coin, constant)
 
         if X == 'xa':
-            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --coin --ignore_linear x --interactions xa --random_seed {1}"
+            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --ignore_linear x --interactions xa --random_seed {1}"
 
         if X == 'xxa':
-            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --coin --ignore_linear x --interactions xa --interactions xxa --random_seed {1}"
+            args = f"--quiet --cb_explore_adf --epsilon {epsilon} --ignore_linear x --interactions xa --interactions xxa --random_seed {1}"
+
+        if coin: 
+            args += ' --coin'
+
+        if not constant:
+            args += " --noconstant"
 
         self._vw = VowpalMediator().init_learner(args,4)
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'memorized_taken2', 'e': self._epsilon, **self._cmt.params, "X": self._X }
+        return { 'family': 'memorized_taken2', 'e': self._epsilon, **self._cmt.params, "other": self._args }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -190,4 +196,4 @@ class MemorizedLearner2:
             return [ff for f in features for ff in (f if isinstance(f,tuple) else [f]) ]
 
     def __reduce__(self):
-        return (type(self), (self._epsilon, self._cmt, self._X))
+        return (type(self), (self._epsilon, self._cmt, *self._args))
