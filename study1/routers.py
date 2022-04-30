@@ -1,8 +1,10 @@
+
 from abc import ABC, abstractmethod
 from typing import Sequence
 
 from vowpalwabbit import pyvw
-from coba.learners.vowpal import VowpalMediator
+
+from coba.learners import VowpalMediator
 from coba.random import CobaRandom
 
 import scipy.sparse as sp
@@ -28,47 +30,90 @@ class RouterFactory(ABC):
     def create(self, query_keys) -> Router:
         ...
 
-class PCARouter(RouterFactory):
+class ProjRouter(RouterFactory):
 
     class _Router(Router):
 
-        def __init__(self, features, median, feature_avgs, first_component):
-            self.features        = features
-            self.median          = median
-            self.feature_avgs    = feature_avgs
-            self.first_component = first_component
+        def __init__(self, features, projector, boundary):
+            self._features  = features
+            self._projector = projector
+            self._boundary  = boundary
 
         def predict(self, query_key):
-            
-            value = (self.median - self.first_component @ (query_key.features(self.features) - self.feature_avgs).T).item()
+            value = query_key.mat(self._features) @ self._projector - self._boundary
             return np.sign(value)*(1-np.exp(-abs(value)))
 
         def update(self, query_key, label, weight):
             pass
 
-    def __init__(self, features = ['x']) -> None:
-        self.features = features
+    def __init__(self, features = ['x'], proj="PCA", samples=50) -> None:
+        self.features = tuple(features)
+        self.proj     = proj
+        self.samples  = samples
 
     def create(self, keys2split) -> _Router:
 
-        if sp.issparse(keys2split[0].features(self.features)):
-            features_mat  = sp.vstack([k.features(self.features) for k in keys2split])
-            features_avg  = features_mat.mean(axis=0)
-            features_mat -= sp.vstack([sp.csr_matrix(features_avg)]*len(keys2split))
+        is_sparse = isinstance(keys2split[0].raw(self.features), dict)
+
+        if not is_sparse and len(keys2split[0].raw(self.features)) == 1:
+            projector = np.array([1])
+            boundary  = np.median([key.raw(self.features)[0] for key in keys2split])            
+
+        elif self.proj == "PCA":
+            if is_sparse:
+                features = sp.vstack([k.mat(self.features) for k in keys2split])
+                center   = sp.vstack([sp.csr_matrix(features.mean(axis=0))]*len(keys2split))
+            else:
+                features = np.vstack([k.mat(self.features) for k in keys2split])
+                center   = np.vstack([features.mean(axis=0)]*len(keys2split))
+
+            projector = TruncatedSVD(n_components=1).fit(features-center).components_.astype(float)[0]
+            boundary  = np.median(features @ projector)
+
         else:
-            features_mat  = np.vstack([k.features(self.features) for k in keys2split])
-            features_avg  = features_mat.mean(axis=0)
-            features_mat -= np.vstack([features_avg]*len(keys2split))
+            max_projector   = None
+            max_dispersion  = 0
+            max_projections = None
 
-        first_component   = TruncatedSVD(n_components=1).fit(features_mat).components_
-        first_projections = (first_component @ features_mat.T).squeeze().tolist()
+            raws2split = [k.raw(self.features) for k in keys2split]
 
-        return PCARouter._Router(self.features, np.median(first_projections), features_avg, first_component)
+            if is_sparse:
+                mat2split  = sp.vstack([k.mat(self.features) for k in keys2split])
+            else:
+                mat2split  = np.vstack([k.mat(self.features) for k in keys2split])
+
+            if is_sparse:
+                indices = list(set(sp.find(mat2split)[1]))
+            else:
+                indices = list(range(len(raws2split[0])))
+
+            for _ in range(self.samples):
+                projector = np.random.randn(len(indices))
+                projector = projector/np.linalg.norm(projector)
+
+                if is_sparse:
+                    sparse_projector = np.zeros((mat2split.shape[1]),float)
+                    sparse_projector[indices] = projector
+                    projector = sparse_projector
+
+                projections = projector @ mat2split.T
+                dispersion  = projections.var()
+
+                if dispersion > max_dispersion:
+                    max_projector   = projector
+                    max_dispersion  = dispersion
+                    max_projections = projections
+
+            projector = max_projector.T
+            boundary  = np.median(max_projections)
+
+        return ProjRouter._Router(self.features, projector, boundary)
 
     def __str__(self) -> str:
-        return f"PCA({self.features})"
 
-class LogRouter(RouterFactory):
+        return f"P{(self.proj,self.features)}"
+
+class VowpRouter(RouterFactory):
 
     class _Router(Router):
 
@@ -84,7 +129,7 @@ class LogRouter(RouterFactory):
                 "--loss_function logistic",
                 "--link=glf1",
             ]
- 
+
             X = X or ['x','a']
             if 'x' not in X: options.append("--ignore_linear x")
             if 'a' not in X: options.append("--ignore_linear a")
@@ -101,15 +146,14 @@ class LogRouter(RouterFactory):
 
         def _make_example(self, query_key, label, weight) -> pyvw.example:
             label = f"{0 if label is None else label} {0 if weight is None else weight} {self.base.predict(query_key)}"
-            return self.vw.make_example({"x": query_key.context, "a": query_key.action}, label)
+            return self.vw.make_example({"x": query_key.raw('x'), "a": query_key.raw('a') }, label)
 
-    def __init__(self, X:Sequence[str]=[]) -> None:
-        self._args = (X,)
+    def __init__(self, X:Sequence[str]=[], base="PCA") -> None:
+        self._args = (tuple(X),base)
 
     def create(self, keys2split) -> _Router:
 
-        pca_router = PCARouter().create(keys2split)
-        new_router = LogRouter._Router(*self._args, pca_router)
+        new_router = VowpRouter._Router(self._args[0], ProjRouter(proj=self._args[1]).create(keys2split))
 
         return new_router
 
@@ -118,7 +162,7 @@ class LogRouter(RouterFactory):
 
 class RandomRouter(RouterFactory,Router):
 
-    def __init__(self) -> None:
+    def __init__(self,*args,**kwargs) -> None:
         self._rng = CobaRandom(1)
 
     def create(self, keys2split) -> 'RandomRouter':

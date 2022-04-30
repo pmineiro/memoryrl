@@ -24,21 +24,21 @@ class MemoryKey:
         self._hash = hash((context,action))
 
     def raw(self, features):
-        features = tuple(features)
         if features not in self.raw_cache:
-            self.raw_cache[features] = InteractionsEncoder(features).encode(x=self.x,a=self.a)
+            raw = InteractionsEncoder(features).encode(x=self.x,a=self.a)
+            if isinstance(raw,dict): raw = {k:v for k,v in raw.items() if v != 0}
+            self.raw_cache[features] = raw
         return self.raw_cache[features]
 
-    def features(self, features):
-        features = tuple(features)
+    def mat(self, features):
         if features not in self.np_cache:
-            raw_features=self.raw(features)
-            if isinstance(raw_features,dict):
+            raw=self.raw(features)
+            if isinstance(raw,dict):
                 from sklearn.feature_extraction import FeatureHasher
-                self.np_cache[features] = FeatureHasher().fit_transform([raw_features])
+                self.np_cache[features] = FeatureHasher().fit_transform([raw])
             else:
                 import numpy as np
-                self.np_cache[features] = np.array([raw_features])
+                self.np_cache[features] = np.array([raw])
         return self.np_cache[features]
 
     def __hash__(self) -> int:
@@ -68,8 +68,10 @@ class MemorizedLearner1:
         self._i += 1
 
         if logn and self._i % logn == 0:
-           print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
-           print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
+            if self._cmt.root and self._cmt.root.left:
+                print(f"BAL {self._cmt.d} {self._cmt.alpha} {self._cmt.root.left.n} {self._cmt.root.right.n}")
+            print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
+            print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         predict_start = time.time()
 

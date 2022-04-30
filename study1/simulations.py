@@ -4,6 +4,7 @@ from typing import Tuple
 import numpy as np
 from sklearn.decomposition import TruncatedSVD
 
+from coba.pipes import Flatten
 from coba.environments import LambdaSimulation, EnvironmentFilter, SimulatedInteraction
 from coba.random import CobaRandom
 
@@ -132,7 +133,7 @@ class MNIST_SVD(EnvironmentFilter):
         stuff = []
 
         for interaction in interactions:
-            rows.append(interaction.context)
+            rows.append(list(Flatten().filter([interaction.context]))[0])
             stuff.append((interaction.actions, interaction.rewards))
 
         svd = TruncatedSVD(n_components=self._rank, n_iter=5, random_state=self._seed)

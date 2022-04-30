@@ -1,9 +1,10 @@
-from math      import log
-from itertools import count
-from typing    import Dict, Any, Tuple, Hashable, Iterable
+from math        import log
+from itertools   import count
+from collections import Counter
+from typing      import Dict, Any, Tuple, Hashable, Iterable
 
-from routers   import RouterFactory, Router, PCARouter
-from scorers   import Scorer
+from routers   import RouterFactory, Router, ProjRouter
+from scorers   import Scorer, RandomScorer
 from splitters import Splitter
 
 from coba.random import CobaRandom
@@ -44,7 +45,7 @@ class CMT:
         alpha:float=0.25, 
         v:Tuple[int,...] = (1,),
         mlr:float = 0,
-        rng:CobaRandom= CobaRandom(1337)):
+        rng:int = 1337):
 
         self.max_mem   = max_mem
         self.g_factory = router
@@ -52,7 +53,7 @@ class CMT:
         self.alpha     = alpha
         self.c         = c
         self.d         = d
-        self.rng       = rng
+        self.rng       = CobaRandom(rng)
         self.node_ids  = iter(count())
         self.v         = v
         self.mlr       = mlr
@@ -65,7 +66,7 @@ class CMT:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'v':self.v, 'm': self.max_mem, 'd': self.d, 'c': str(self.c), "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
+        return { 'type':'CMT', 'v':self.v, 'm': self.max_mem, 'c': str(self.c), 'd': self.d, "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
 
     def query(self, key) -> Tuple[MemVal,MemScore]:
 
@@ -78,9 +79,9 @@ class CMT:
         if key in self.leaf_by_key: return
 
         self.__update_routers(key, value, weight, mode="insert")
-        self.__insert_leaf(list(self.__path(key,self.root))[-1], key, value, weight)
+        self.__insert_leaf(list(self._path(key,self.root))[-1], key, value, weight)
         self.__update_scorer(self.leaf_by_key[key], key, value, weight, mode="insert")
-        self.__reroute()
+        #self.__reroute()
 
     def update(self, key: MemKey, outcome: float, weight: float) -> None:
         assert 0 <= outcome <= 1
@@ -90,7 +91,7 @@ class CMT:
 
         self.__update_omega(key, outcome)
         self.__update_routers(key, outcome, weight, mode="update")
-        self.__update_scorer(list(self.__path(key,self.root))[-1], key, outcome, weight, mode="update")
+        self.__update_scorer(list(self._path(key,self.root))[-1], key, outcome, weight, mode="update")
         self.__reroute()
 
     def delete(self, key: MemKey) -> None:
@@ -177,28 +178,28 @@ class CMT:
     def __reroute(self) -> None:
 
         if self.rerouting: return
+        if len(self.leaf_by_key) < 3: return
 
         flt_part = self.d - int(self.d)
         int_part = int(self.d)
 
         for _ in range(int_part + int(self.rng.random() < flt_part)):
 
-            x = self.rng.choice(list(self.leaf_by_key.keys()))
-            o = self.leaf_by_key[x].memories[x]
+            prune_leaf = self.root
+
+            while not prune_leaf.is_leaf:
+                prune_leaf = [prune_leaf.left, prune_leaf.right][self.rng.randint(0,1)]
+
+            prune_mems = prune_leaf.memories.copy()
 
             self.rerouting = True
-            
-            old_n = self.root.n
-            
-            self.delete(x)
-            assert self.root.n == old_n-1
-            
-            self.insert(x, o, 1)
-            assert self.root.n == old_n
-            
+
+            for key in prune_mems: self.delete(key)
+            for key,val in prune_mems.items(): self.insert(key,val,1)
+
             self.rerouting = False
 
-    def __path(self, key: MemKey, node: Node) -> Iterable[Node]:
+    def _path(self, key: MemKey, node: Node) -> Iterable[Node]:
         yield node
         while not node.is_leaf:
             label = node.g.predict(key) or self.rng.choice([-1,1])
@@ -207,10 +208,8 @@ class CMT:
 
     def __query(self, key: MemKey, init: Node) -> Tuple[MemKey, MemVal, MemScore]:
         
-        final_node = list(self.__path(key, init))[-1]
-
+        final_node = list(self._path(key, init))[-1]
         assert (final_node.is_leaf and final_node.memories)
-
         memories = final_node.memories
 
         if not memories:
@@ -233,7 +232,7 @@ class CMT:
 
         assert not node.is_leaf
 
-        if not isinstance(self.g_factory,PCARouter):
+        if not isinstance(self.g_factory,ProjRouter):
             if self.v[0] == 1:
                 _, left_val, left_score = self.__query(key, node.left)
                 _, right_val, right_score = self.__query(key, node.right)
@@ -262,7 +261,7 @@ class CMT:
 
     def __update_routers(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
 
-        if isinstance(self.g_factory, PCARouter): return
+        if isinstance(self.g_factory, ProjRouter): return
 
         assert mode in ['update','insert']
 
@@ -287,4 +286,95 @@ class CMT:
         mem_key_err_pairs = [ (k, (val-v)**2) for k,v in leaf.memories.items() ]
         mem_keys, mem_errs = zip(*mem_key_err_pairs)
         
+        self.f.update(key, mem_keys, mem_errs, weight)
+
+class CMF:
+
+    def __init__(self,
+        n_trees:int,
+        max_mem:int,
+        router: RouterFactory,
+        scorer: Scorer,
+        c:Splitter,
+        d:int,
+        alpha:float=0.25, 
+        v:Tuple[int,...] = (1,),
+        mlr:float = 0) -> None:
+
+        self._trees  = [ CMT(max_mem, router, RandomScorer(), c, d, alpha, v, mlr, i) for i in range(n_trees)]
+        self._scorer = scorer
+
+        self.max_mem   = max_mem
+        self.g_factory = router
+        self.f         = scorer
+        self.alpha     = alpha
+        self.c         = c
+        self.d         = d
+        self.node_ids  = iter(count())
+        self.v         = v
+        self.mlr       = mlr
+        self.rng       = CobaRandom(1337)
+        self.root      = None
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return { 'T': len(self._trees), 'type':'CMF', 'v':self.v, 'm': self.max_mem, 'c': str(self.c), 'd': self.d, "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
+
+    def query(self, key: MemKey) -> Tuple[MemVal,MemScore]:
+
+        memories = self.__memories(key)
+
+        if not memories:
+            top_mem_key   = None
+            top_mem_val   = None
+            top_mem_score = None
+        else:
+            mem_keys     = list(memories.keys())
+            mem_scores   = self.f.predict(key, mem_keys)
+            tie_breakers = self.rng.randoms(len(mem_scores)) #randomly break
+            sorted_mems  = list(sorted(zip(mem_scores, tie_breakers, mem_keys)))
+
+            top_mem_key   = sorted_mems[0][2]
+            top_mem_val   = memories[top_mem_key]
+            top_mem_score = sorted_mems[0][0]            
+
+        return top_mem_val, top_mem_score
+
+    def insert(self, key: MemKey, value: MemVal, weight: float):
+
+        for tree in self._trees:
+            tree.insert(key,value,weight)
+
+        self.__update_scorer(key, value, weight, "insert")
+
+    def update(self, key: MemKey, outcome: float, weight: float) -> None:
+
+        for tree in self._trees:
+            tree.update(key,outcome,weight)
+
+        self.__update_scorer(key, outcome, weight, "update")
+
+    def __memories(self, key: MemKey) -> Dict[MemKey,MemVal]:
+        if self._trees[0].root.n == 0: 
+            return {}
+
+        memories = {}
+        votes = Counter()
+
+        for tree in self._trees:
+            tree_memories = list(tree._path(key, tree.root))[-1].memories
+            memories.update(tree_memories)
+            votes = votes + Counter(tree_memories.keys())
+
+        return { k: memories[k] for k,v in  sorted(votes.items(), key=lambda k: k[1], reverse=True)[:75] }
+
+    def __update_scorer(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
+
+        assert mode in ['update','insert'] 
+
+        mem_key_err_pairs = [ (k, (val-v)**2) for k,v in self.__memories(key).items() ]
+        
+        if len(mem_key_err_pairs) == 0: return
+
+        mem_keys, mem_errs = zip(*mem_key_err_pairs)
         self.f.update(key, mem_keys, mem_errs, weight)
