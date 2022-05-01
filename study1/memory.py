@@ -1,13 +1,16 @@
+import copy
+import bisect
+
 from math        import log
 from itertools   import count
 from collections import Counter
-from typing      import Dict, Any, Tuple, Hashable, Iterable
+from typing      import Dict, Any, Tuple, Hashable, Iterable, List
 
 from routers   import RouterFactory, Router, ProjRouter
-from scorers   import Scorer, RandomScorer
+from scorers   import Scorer
 from splitters import Splitter
 
-from coba.random import CobaRandom
+from coba.random import CobaRandom, shuffle
 
 MemKey   = Hashable
 MemVal   = Any
@@ -32,7 +35,7 @@ class Node:
 
     @property
     def depth(self):
-        return 1 + self.parent.depth if self.parent else 0
+        return 1 + self.parent.depth if self.parent else 1
 
 class CMT:
 
@@ -43,8 +46,9 @@ class CMT:
         c:Splitter,
         d:int,
         alpha:float=0.25, 
-        v:Tuple[int,...] = (1,),
+        v:Tuple[int,...] = (2,),
         mlr:float = 0,
+        max_depth = None,
         rng:int = 1337):
 
         self.max_mem   = max_mem
@@ -57,6 +61,7 @@ class CMT:
         self.node_ids  = iter(count())
         self.v         = v
         self.mlr       = mlr
+        self.max_depth = max_depth
 
         self.root = Node(next(self.node_ids), None)
         self.leaf_by_key: Dict[MemKey,Node] = {}
@@ -79,9 +84,8 @@ class CMT:
         if key in self.leaf_by_key: return
 
         self.__update_routers(key, value, weight, mode="insert")
-        self.__insert_leaf(list(self._path(key,self.root))[-1], key, value, weight)
+        self.__insert_leaf(list(self.__path(key,self.root))[-1], key, value, weight)
         self.__update_scorer(self.leaf_by_key[key], key, value, weight, mode="insert")
-        #self.__reroute()
 
     def update(self, key: MemKey, outcome: float, weight: float) -> None:
         assert 0 <= outcome <= 1
@@ -91,7 +95,7 @@ class CMT:
 
         self.__update_omega(key, outcome)
         self.__update_routers(key, outcome, weight, mode="update")
-        self.__update_scorer(list(self._path(key,self.root))[-1], key, outcome, weight, mode="update")
+        self.__update_scorer(list(self.__path(key,self.root))[-1], key, outcome, weight, mode="update")
         self.__reroute()
 
     def delete(self, key: MemKey) -> None:
@@ -123,6 +127,9 @@ class CMT:
                 self.root = other_child
                 other_child.parent = None
 
+    def memories(self, key: MemKey) -> Dict[MemKey, MemVal]:
+        return list(self.__path(key, self.root))[-1].memories
+
     def __update_omega(self, key: MemKey, outcome:float) -> None:
         if self.mlr > 0:
             top_key, top_val = self.__query(key,self.root)[0:2]
@@ -132,7 +139,7 @@ class CMT:
 
         assert leaf.is_leaf
 
-        if leaf.n <= self.c(self.root.n):
+        if leaf.n <= self.c(self.root.n) or leaf.depth == self.max_depth:
 
             assert insert_key not in self.leaf_by_key
             assert insert_key not in leaf.memories
@@ -199,7 +206,7 @@ class CMT:
 
             self.rerouting = False
 
-    def _path(self, key: MemKey, node: Node) -> Iterable[Node]:
+    def __path(self, key: MemKey, node: Node) -> Iterable[Node]:
         yield node
         while not node.is_leaf:
             label = node.g.predict(key) or self.rng.choice([-1,1])
@@ -208,7 +215,7 @@ class CMT:
 
     def __query(self, key: MemKey, init: Node) -> Tuple[MemKey, MemVal, MemScore]:
         
-        final_node = list(self._path(key, init))[-1]
+        final_node = list(self.__path(key, init))[-1]
         assert (final_node.is_leaf and final_node.memories)
         memories = final_node.memories
 
@@ -224,7 +231,7 @@ class CMT:
 
             top_mem_key   = sorted_mems[0][2]
             top_mem_val   = memories[top_mem_key]
-            top_mem_score = sorted_mems[0][0]            
+            top_mem_score = sorted_mems[0][0]
 
         return top_mem_key, top_mem_val, top_mem_score
 
@@ -288,41 +295,120 @@ class CMT:
         
         self.f.update(key, mem_keys, mem_errs, weight)
 
-class CMF:
+class DCI:
 
-    def __init__(self,
-        n_trees:int,
-        max_mem:int,
-        router: RouterFactory,
-        scorer: Scorer,
-        c:Splitter,
-        d:int,
-        alpha:float=0.25, 
-        v:Tuple[int,...] = (1,),
-        mlr:float = 0) -> None:
+    class Index:
+        def __init__(self, proj, features, keys, samples):
 
-        self._trees  = [ CMT(max_mem, router, RandomScorer(), c, d, alpha, v, mlr, i) for i in range(n_trees)]
-        self._scorer = scorer
+            import numpy as np
+            import scipy.sparse as sp
+            from sklearn.decomposition import TruncatedSVD
 
-        self.max_mem   = max_mem
-        self.g_factory = router
-        self.f         = scorer
-        self.alpha     = alpha
-        self.c         = c
-        self.d         = d
-        self.node_ids  = iter(count())
-        self.v         = v
-        self.mlr       = mlr
-        self.rng       = CobaRandom(1337)
-        self.root      = None
+            self.features = tuple(features)
+            raws2split    = [k.raw(self.features) for k in keys]
+            is_sparse     = isinstance(keys[0].raw(self.features), dict)
+
+            if is_sparse:
+                all_mat2split  = sp.vstack([k.mat(self.features) for k in keys])
+                rng_mat2split  = sp.vstack([k.mat(self.features) for k in shuffle(keys)[:50]])
+            else:
+                all_mat2split  = np.vstack([k.mat(self.features) for k in keys])
+                rng_mat2split  = np.vstack([k.mat(self.features) for k in shuffle(keys)[:50]])
+
+            if proj=="PCA":
+                if is_sparse:
+                    features = rng_mat2split
+                    center   = sp.vstack([sp.csr_matrix(features.mean(axis=0))]*features.shape[0])
+                else:
+                    features = rng_mat2split
+                    center   = np.vstack([features.mean(axis=0)]*features.shape[0])
+
+                max_projector = TruncatedSVD(n_components=1).fit(features-center).components_.astype(float)[0]
+            else:
+                max_projector   = None
+                max_dispersion  = 0
+
+                if is_sparse:
+                    indices = list(set(sp.find(rng_mat2split)[1]))
+                else:
+                    indices = list(range(len(raws2split[0])))
+
+                for _ in range(samples):
+                    projector = np.random.randn(len(indices))
+                    projector = projector/np.linalg.norm(projector)
+
+                    if is_sparse:
+                        sparse_projector = np.zeros((rng_mat2split.shape[1]),float)
+                        sparse_projector[indices] = projector
+                        projector = sparse_projector
+
+                    projections = projector @ rng_mat2split.T
+                    dispersion  = projections.var()
+
+                    if dispersion > max_dispersion:
+                        max_projector   = projector
+                        max_dispersion  = dispersion
+
+            self._projector   = max_projector
+            self._memories    = list(keys)
+            self._projections = (max_projector @ all_mat2split.T).tolist()
+
+        def insert(self, key):
+            proj = (key.mat(self.features) @ self._projector)[0]
+            index = bisect.bisect(self._projections, proj)
+
+            self._memories.insert(index, key)
+            self._projections.insert(index, proj)
+
+        def query(self, key, n) -> Iterable[MemKey]:
+            proj = (key.mat(self.features) @ self._projector)[0]
+            index = bisect.bisect(self._projections, proj)
+
+            left_idx  = index-1
+            right_idx = index
+
+            get = lambda i: abs(self._projections[i]-proj) if 0<=i and i<len(self._projections) else float('inf')
+
+            left_val = get(left_idx)
+            right_val = get(right_idx)
+
+            mem_keys = []
+
+            for _ in range(n):
+                if left_val < right_val:
+                    mem_keys.append(self._memories[left_idx])
+                    left_idx -= 1
+                    left_val = get(left_idx)
+                elif left_val > right_val:
+                    mem_keys.append(self._memories[right_idx])
+                    right_idx += 1
+                    right_val = get(right_idx)
+
+            mem_keys.reverse()
+
+            return mem_keys
+
+    def __init__(self, n_index, n_top, n_samples, proj, scorer:Scorer, features = ['x'], rng:int = 1337) -> None:
+        self._features  = features
+        self._n_index   = n_index
+        self._n_top     = n_top
+        self._n_samples = n_samples
+        self.f          = scorer
+        self._proj      = proj
+        
+        self._projectors: List[DCI.Index] = []
+        self._memories: Dict[MemKey,MemVal]  = {}
+        self._index_mems: List[MemKey] = []
+
+        self.rng = CobaRandom(rng)
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'T': len(self._trees), 'type':'CMF', 'v':self.v, 'm': self.max_mem, 'c': str(self.c), 'd': self.d, "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
+        return { 'type':'DCI', "n_top": self._n_top, "n_index": self._n_index, "n_samples": self._n_samples, "P": self._proj }
 
     def query(self, key: MemKey) -> Tuple[MemVal,MemScore]:
 
-        memories = self.__memories(key)
+        memories = self.memories(key)
 
         if not memories:
             top_mem_key   = None
@@ -331,12 +417,86 @@ class CMF:
         else:
             mem_keys     = list(memories.keys())
             mem_scores   = self.f.predict(key, mem_keys)
-            tie_breakers = self.rng.randoms(len(mem_scores)) #randomly break
+            tie_breakers = self.rng.randoms(len(mem_scores))
             sorted_mems  = list(sorted(zip(mem_scores, tie_breakers, mem_keys)))
 
             top_mem_key   = sorted_mems[0][2]
             top_mem_val   = memories[top_mem_key]
-            top_mem_score = sorted_mems[0][0]            
+            top_mem_score = sorted_mems[0][0]
+
+        return top_mem_val, top_mem_score
+
+    def insert(self, key: MemKey, value: MemVal, weight: float):
+        self._memories[key] = value
+        self._index_mems.append(key)
+
+        for projector in self._projectors:
+            projector.insert(key)
+
+        if len(self._index_mems) == self._n_index:
+            self._projectors.append(DCI.Index(self._proj, self._features, self._index_mems, self._n_samples))
+            for key in (self._memories.keys() - set(self._index_mems)):
+                self._projectors[-1].insert(key)
+            self._index_mems = []
+
+        self.__update_scorer(key, value, weight, "insert")
+
+    def update(self, key: MemKey, outcome: float, weight: float) -> None:
+        self.__update_scorer(key, outcome, weight, "update")
+
+    def memories(self, key: MemKey) -> Dict[MemKey,MemVal]:
+
+        if self._projectors:
+            votes = Counter()
+
+            for projector in self._projectors:
+                votes = votes + Counter(dict(zip(projector.query(key, self._n_top), count())))
+
+            return { k: self._memories[k] for k,v in votes.most_common(100) }
+        else:
+            return self._memories
+
+    def __update_scorer(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
+
+        assert mode in ['update','insert'] 
+
+        mem_key_err_pairs = [ (k, (val-v)**2) for k,v in self.memories(key).items() ]
+
+        if len(mem_key_err_pairs) == 0: return
+
+        mem_keys, mem_errs = zip(*mem_key_err_pairs)
+        self.f.update(key, mem_keys, mem_errs, weight)
+
+class CMF:
+
+    def __init__(self, n_trees:int, scorer:Scorer, tree) -> None:
+
+        self._tree    = tree
+        self._scorer  = scorer
+        self._rng     = CobaRandom(1)
+        self._trees   = [ copy.deepcopy(tree) for _ in range(n_trees)  ]
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return { **self._tree.params, 'scr': str(self._scorer), 'type':'CMF', 'T': len(self._trees) }
+
+    def query(self, key: MemKey) -> Tuple[MemVal,MemScore]:
+
+        memories = self.memories(key)
+
+        if not memories:
+            top_mem_key   = None
+            top_mem_val   = None
+            top_mem_score = None
+        else:
+            mem_keys     = list(memories.keys())
+            mem_scores   = self._scorer.predict(key, mem_keys)
+            tie_breakers = self._rng.randoms(len(mem_scores)) #randomly break
+            sorted_mems  = list(sorted(zip(mem_scores, tie_breakers, mem_keys)))
+
+            top_mem_key   = sorted_mems[0][2]
+            top_mem_val   = memories[top_mem_key]
+            top_mem_score = sorted_mems[0][0]
 
         return top_mem_val, top_mem_score
 
@@ -354,27 +514,25 @@ class CMF:
 
         self.__update_scorer(key, outcome, weight, "update")
 
-    def __memories(self, key: MemKey) -> Dict[MemKey,MemVal]:
-        if self._trees[0].root.n == 0: 
-            return {}
-
+    def memories(self, key: MemKey) -> Dict[MemKey,MemVal]:
+        
         memories = {}
         votes = Counter()
 
         for tree in self._trees:
-            tree_memories = list(tree._path(key, tree.root))[-1].memories
+            tree_memories = tree.memories(key)
             memories.update(tree_memories)
             votes = votes + Counter(tree_memories.keys())
 
-        return { k: memories[k] for k,v in  sorted(votes.items(), key=lambda k: k[1], reverse=True)[:75] }
+        return { k: memories[k] for k,v in votes.most_common(75) }
 
     def __update_scorer(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
 
         assert mode in ['update','insert'] 
 
-        mem_key_err_pairs = [ (k, (val-v)**2) for k,v in self.__memories(key).items() ]
-        
+        mem_key_err_pairs = [ (k, (val-v)**2) for k,v in self.memories(key).items() ]
+
         if len(mem_key_err_pairs) == 0: return
 
         mem_keys, mem_errs = zip(*mem_key_err_pairs)
-        self.f.update(key, mem_keys, mem_errs, weight)
+        self._scorer.update(key, mem_keys, mem_errs, weight)

@@ -39,7 +39,7 @@ class FinalPrintEvaluationTask(EvaluationTask):
 
         #     plt.show()
 
-        if isinstance(learner, MemorizedLearner1) and learner._cmt.root and learner._cmt.root.left:
+        if isinstance(learner, MemorizedLearner1) and hasattr(learner._cmt, 'root') and learner._cmt.root and learner._cmt.root.left:
             print(f"{learner._cmt.d} {learner._cmt.alpha} -- {learner._cmt.root.left.n} -- {learner._cmt.root.right.n}")
 
         return d

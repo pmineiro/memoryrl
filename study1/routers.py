@@ -40,7 +40,7 @@ class ProjRouter(RouterFactory):
             self._boundary  = boundary
 
         def predict(self, query_key):
-            value = query_key.mat(self._features) @ self._projector - self._boundary
+            value = (query_key.mat(self._features) @ self._projector)[0] - self._boundary
             return np.sign(value)*(1-np.exp(-abs(value)))
 
         def update(self, query_key, label, weight):
@@ -111,7 +111,7 @@ class ProjRouter(RouterFactory):
 
     def __str__(self) -> str:
 
-        return f"P{(self.proj,self.features)}"
+        return f"P{(self.proj,self.features,self.samples)}"
 
 class VowpRouter(RouterFactory):
 
@@ -179,3 +179,4 @@ class RandomRouter(RouterFactory,Router):
 
     def __str__(self) -> str:
         return self.__repr__()
+

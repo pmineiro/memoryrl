@@ -68,7 +68,7 @@ class MemorizedLearner1:
         self._i += 1
 
         if logn and self._i % logn == 0:
-            if self._cmt.root and self._cmt.root.left:
+            if hasattr(self._cmt, 'root') and self._cmt.root and self._cmt.root.left:
                 print(f"BAL {self._cmt.d} {self._cmt.alpha} {self._cmt.root.left.n} {self._cmt.root.right.n}")
             print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
             print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
