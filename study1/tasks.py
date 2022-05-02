@@ -43,3 +43,16 @@ class FinalPrintEvaluationTask(EvaluationTask):
         #    print(f"{learner._cmt.d} {learner._cmt.alpha} -- {learner._cmt.root.left.n} -- {learner._cmt.root.right.n}")
 
         return d
+
+class SlimOnlineOnPolicyEvalTask:
+    
+    def process(self, learner: Learner, interactions: Iterable[Interaction]) -> Iterable[dict]:
+
+        for d in OnlineOnPolicyEvalTask().process(learner,interactions):
+            d.pop('max_reward')
+            d.pop('min_reward')
+            d.pop('min_rank')
+            d.pop('max_rank')
+            d.pop('rank')
+            
+            yield d

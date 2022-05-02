@@ -486,8 +486,8 @@ class CMF:
 
         if not memories:
             top_mem_key   = None
-            top_mem_val   = None
-            top_mem_score = None
+            top_mem_val   = 0
+            top_mem_score = 0
         else:
             mem_keys     = list(memories.keys())
             mem_scores   = self._scorer.predict(key, mem_keys)
