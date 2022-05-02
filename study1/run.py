@@ -20,7 +20,7 @@ from coba.learners     import VowpalEpsilonLearner, CorralLearner, EpsilonBandit
 #experiment = 'full6'
 #json       = f"./study1/experiments/{experiment}.json"
 #log        = f"./study1/outcomes/{experiment}_31.log.gz"
-log        = "./study1/outcomes/full-openml-class-5.log.gz"
+log        = "./study1/outcomes/full-openml-class-6.log.gz"
 config     = {"processes": 8, "chunk_by":'task' }
 
 epsilon    = 0.1
@@ -33,10 +33,10 @@ if __name__ == '__main__':
       VowpalEpsilonLearner(epsilon, features=["a","xa"]),
       VowpalEpsilonLearner(epsilon, features=["a","xa","xxa"]),
 
-      MemorizedLearner1(epsilon, CMF(3, DistScorer ("exp",['x','a','xa','xxa']), CMT( 10000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                        , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
-      MemorizedLearner1(epsilon, CMF(3, RankScorer ("exp",['x','a','xa','xxa']), CMT( 10000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                        , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
-      MemorizedLearner1(epsilon,                                                 CMT( 10000, ProjRouter(['x'],"PCA"           ), RankScorer("exp",['x','a','xa','xxa']), c=ConstSplitter(100), v=(2,), d=0.00, alpha=0           )),
-      MemorizedLearner2(epsilon,                                                 CMT( 10000, ProjRouter(['x'],"PCA"           ), RankScorer("exp",['x','a','xa','xxa']), c=ConstSplitter(100), v=(2,), d=0.00, alpha=0           ), "xxa", False, True),
+      MemorizedLearner1(epsilon, CMF(5, DistScorer  ("exp",['x','a','xa']), CMT( 10000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                  , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
+      MemorizedLearner1(epsilon, CMF(5, RankScorer  ("exp",['x','a','xa']), CMT( 10000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                  , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
+      MemorizedLearner1(epsilon,                                            CMT( 10000, ProjRouter(['x'],"PCA"           ), RankScorer("exp",['x','a','xa']), c=ConstSplitter(100), v=(2,), d=0.00, alpha=0           )),
+      MemorizedLearner2(epsilon,                                            CMT( 10000, ProjRouter(['x'],"PCA"           ), RankScorer("exp",['x','a','xa']), c=ConstSplitter(100), v=(2,), d=0.00, alpha=0           ), "xxa", False, True),
    
       #is regression learner better?
          #NO
