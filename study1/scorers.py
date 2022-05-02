@@ -166,6 +166,8 @@ class RankScorer4(Scorer):
             "--noconstant",
             "--coin",
             "--loss_function squared",
+            "--min_prediction 0",
+            "--max_prediction 1000"
         ]
 
         self._X    = tuple(X)
@@ -247,12 +249,12 @@ class RankScorer4(Scorer):
 
     def _predict(self, key1, key2):
         base, ns = self._bns(key1,key2)
-        pred = self.vw.predict(self.vw.make_example(ns, f"{0} {0} {base}"))
+        pred = self.vw.predict(self.vw.make_example(ns, f"{0} {0} {0}"))
         return pred
 
     def _learn(self, key1, key2, label, weight) -> pyvw.example:
         base, ns = self._bns(key1,key2)
-        self.vw.learn(self.vw.make_example(ns, f"{label*base} {weight} {base}"))
+        self.vw.learn(self.vw.make_example(ns, f"{label*base} {weight} {0}"))
 
     def _cos_dist(self, query_key, memory_key) -> float:
         x1 = query_key.raw(self._F)
