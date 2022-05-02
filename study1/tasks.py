@@ -48,11 +48,12 @@ class SlimOnlineOnPolicyEvalTask:
     
     def process(self, learner: Learner, interactions: Iterable[Interaction]) -> Iterable[dict]:
 
-        for d in OnlineOnPolicyEvalTask().process(learner,interactions):
+        for d in OnlineOnPolicyEvalTask(time=False).process(learner,interactions):
             d.pop('max_reward')
             d.pop('min_reward')
             d.pop('min_rank')
             d.pop('max_rank')
             d.pop('rank')
+            d.pop('n_actions')
             
             yield d
