@@ -30,13 +30,13 @@ if __name__ == '__main__':
    learners = [
       RandomLearner(),
       EpsilonBanditLearner(epsilon),
-      #VowpalEpsilonLearner(epsilon, features=["a","xa"]),
+      VowpalEpsilonLearner(epsilon, features=["a","xa"]),
       VowpalEpsilonLearner(epsilon, features=["a","xa","xxa"]),
 
-      MemorizedLearner1(epsilon, CMF(3, DistScorer ("exp",['x','a','xa','xxa']), CMT( 6000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                  , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
-      MemorizedLearner1(epsilon, CMF(3, RankScorer ("exp",['x','a','xa','xxa']), CMT( 6000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                  , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
-      MemorizedLearner1(epsilon, CMF(3, RankScorer4("l1" ,['x','a','xa','xxa']), CMT( 6000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                  , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
-      MemorizedLearner1(epsilon,                                                 CMT( 6000, ProjRouter(['x'],"PCA"           ), RankScorer("exp",['x','a','xa']), c=ConstSplitter(100), v=(2,), d=0.00, alpha=0           )),
+      MemorizedLearner1(epsilon, CMF(3, DistScorer ("exp",['x','a','xa']), CMT( 6000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                  , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
+      MemorizedLearner1(epsilon, CMF(3, RankScorer ("exp",['x','a','xa']), CMT( 6000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                  , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
+      MemorizedLearner1(epsilon, CMF(3, RankScorer4("l1" ,['x','a','xa']), CMT( 6000, ProjRouter(['x'],"RNG",samples=90), RandomScorer()                  , c=ConstSplitter(100), v=(2,), d=0.00, alpha=0, rng=None))),
+      MemorizedLearner1(epsilon,                                           CMT( 6000, ProjRouter(['x'],"PCA"           ), RankScorer("exp",['x','a','xa']), c=ConstSplitter(100), v=(2,), d=0.00, alpha=0           )),
 
       #is regression learner better?
          #NO
