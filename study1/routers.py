@@ -30,6 +30,16 @@ class RouterFactory(ABC):
     def create(self, query_keys) -> Router:
         ...
 
+class ConstRouter(Router):
+    def __init__(self,const:int):
+        self._const = const
+
+    def predict(self, query_key) -> int:
+        return self._const
+
+    def update(self, query_key, label, weight) -> None:
+        pass
+
 class ProjRouter(RouterFactory):
 
     class _Router(Router):
@@ -46,7 +56,7 @@ class ProjRouter(RouterFactory):
         def update(self, query_key, label, weight):
             pass
 
-    def __init__(self, features = ['x'], proj="PCA", samples=50) -> None:
+    def __init__(self, proj="PCA", features = ['x'], samples=90) -> None:
         self.features = tuple(features)
         self.proj     = proj
         self.samples  = samples
@@ -117,7 +127,7 @@ class VowpRouter(RouterFactory):
 
     class _Router(Router):
 
-        def __init__(self, X: Sequence[str], base: Router):
+        def __init__(self, X: Sequence[str], base: Router, n_allowed_updates:int):
 
             options = [
                 "--quiet",
@@ -137,25 +147,30 @@ class VowpRouter(RouterFactory):
 
             self.vw = VowpalMediator().init_learner(" ".join(options), 1)
             self.base = base
+            self.n_allowed_updates = n_allowed_updates
 
         def predict(self, query_key):
             return self.vw.predict(self._make_example(query_key, None, None))
 
         def update(self, query_key, label, weight):
+            if self.n_allowed_updates <= 0: return 
+            self.n_allowed_updates -= 1
             self.vw.learn(self._make_example(query_key, label, weight))
 
         def _make_example(self, query_key, label, weight) -> pyvw.example:
             label = f"{0 if label is None else label} {0 if weight is None else weight} {self.base.predict(query_key)}"
             return self.vw.make_example({"x": query_key.raw('x'), "a": query_key.raw('a') }, label)
 
-    def __init__(self, X:Sequence[str]=[], base="PCA") -> None:
-        self._args = (tuple(X),base)
+    def __init__(self, X:Sequence[str]=[], base="RNG", fixed=False) -> None:
+        self._X     = X
+        self._base  = base
+        self._fixed = fixed
+        self._args  = (tuple(X),base,fixed)
 
     def create(self, keys2split) -> _Router:
-
-        new_router = VowpRouter._Router(self._args[0], ProjRouter(proj=self._args[1]).create(keys2split))
-
-        return new_router
+        init = ProjRouter(proj=self._base).create(keys2split) if self._base in ["PCA","RNG"] else ConstRouter(0)
+        n_allowed_updates = len(keys2split) if self._fixed else float('inf')
+        return VowpRouter._Router(self._X, init, n_allowed_updates)
 
     def __str__(self) -> str:
         return f"vw{self._args}"
@@ -179,4 +194,3 @@ class RandomRouter(RouterFactory,Router):
 
     def __str__(self) -> str:
         return self.__repr__()
-

@@ -6,7 +6,7 @@ from itertools   import count
 from collections import Counter
 from typing      import Dict, Any, Tuple, Hashable, Iterable, List
 
-from routers   import RouterFactory, Router, ProjRouter
+from routers   import RouterFactory, Router, ProjRouter, VowpRouter
 from scorers   import Scorer
 from splitters import Splitter
 
@@ -46,7 +46,6 @@ class CMT:
         c:Splitter,
         d:int,
         alpha:float=0.25, 
-        v:Tuple[int,...] = (2,),
         mlr:float = 0,
         max_depth = None,
         rng:int = 1337):
@@ -59,7 +58,6 @@ class CMT:
         self.d         = d
         self.rng       = CobaRandom(rng)
         self.node_ids  = iter(count())
-        self.v         = v
         self.mlr       = mlr
         self.max_depth = max_depth
 
@@ -71,7 +69,7 @@ class CMT:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'type':'CMT', 'v':self.v, 'm': self.max_mem, 'c': str(self.c), 'd': self.d, "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
+        return { 'type':'CMT', 'm': self.max_mem, 'c': str(self.c), 'd': self.d, "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
 
     def query(self, key) -> Tuple[MemVal,MemScore]:
 
@@ -155,6 +153,9 @@ class CMT:
             assert leaf.n == len(leaf.memories)
 
         else:
+            
+            self.splitting = True
+
             split_memories = leaf.memories
             split_keys     = list(split_memories.keys())
 
@@ -165,44 +166,41 @@ class CMT:
             new_parent.memories = dict()
 
             for split_key in split_keys:
+                self.__update_router(new_parent, split_key, split_memories[split_key], new_parent.g.predict(split_key), "insert",1)
                 leaf = new_parent.left if new_parent.g.predict(split_key) < 0 else new_parent.right
                 leaf.n+=1
                 leaf.memories[split_key] = split_memories[split_key]
                 self.leaf_by_key[split_key] = leaf
-
-            # for split_key,split_val in new_parent.left.memories.items():
-            #     self.__update_scorer(new_parent.left, split_key, split_val, 1, mode="insert")
-
-            # for split_key,split_val in new_parent.right.memories.items():
-            #     self.__update_scorer(new_parent.right, split_key, split_val, 1, mode="insert")
 
             direction = new_parent.g.predict(insert_key) or self.rng.choice([-1,1])
             mode      = "insert"
             self.__update_router(new_parent, insert_key, insert_val, direction, mode, weight)
             leaf = new_parent.left if direction < 0 else new_parent.right
             self.__insert_leaf(leaf, insert_key, insert_val, weight)
+        
+            self.splitting = False
 
     def __reroute(self) -> None:
 
         if self.rerouting: return
-        if len(self.leaf_by_key) < 3: return
 
         flt_part = self.d - int(self.d)
         int_part = int(self.d)
 
         for _ in range(int_part + int(self.rng.random() < flt_part)):
 
-            prune_leaf = self.root
-
-            while not prune_leaf.is_leaf:
-                prune_leaf = [prune_leaf.left, prune_leaf.right][self.rng.randint(0,1)]
-
-            prune_mems = prune_leaf.memories.copy()
+            x = self.rng.choice(list(self.leaf_by_key.keys()))
+            o = self.leaf_by_key[x].memories[x]
 
             self.rerouting = True
 
-            for key in prune_mems: self.delete(key)
-            for key,val in prune_mems.items(): self.insert(key,val,1)
+            old_n = self.root.n
+
+            self.delete(x)
+            assert self.root.n == old_n-1
+
+            self.insert(x, o, 1)
+            assert self.root.n == old_n
 
             self.rerouting = False
 
@@ -216,7 +214,7 @@ class CMT:
     def __query(self, key: MemKey, init: Node) -> Tuple[MemKey, MemVal, MemScore]:
         
         final_node = list(self.__path(key, init))[-1]
-        assert (final_node.is_leaf and final_node.memories)
+        assert (final_node.is_leaf and final_node.memories) or self.splitting
         memories = final_node.memories
 
         if not memories:
@@ -239,20 +237,15 @@ class CMT:
 
         assert not node.is_leaf
 
+        #direction is no longer used because we query the left and right
+        #val       is no longer used because we use the score from the left and the right
+
         if not isinstance(self.g_factory,ProjRouter):
-            if self.v[0] == 1:
-                _, left_val, left_score = self.__query(key, node.left)
-                _, right_val, right_score = self.__query(key, node.right)
+            _, left_val, left_score = self.__query(key, node.left)
+            _, right_val, right_score = self.__query(key, node.right)
 
-                left_loss  = (val-left_val)**2 if left_val is not None else 0
-                right_loss = (val-right_val)**2 if right_val is not None else 0
-
-            if self.v[0] == 2:
-                _, left_val, left_score = self.__query(key, node.left)
-                _, right_val, right_score = self.__query(key, node.right)
-
-                left_loss  = left_score if left_score is not None else 0
-                right_loss = right_score if right_score is not None else 0
+            left_loss  = left_score if left_score is not None else 0
+            right_loss = right_score if right_score is not None else 0
 
             assert 0 <= left_loss and left_loss <=1
             assert 0 <= right_loss and right_loss <=1
@@ -268,7 +261,7 @@ class CMT:
 
     def __update_routers(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
 
-        if isinstance(self.g_factory, ProjRouter): return
+        if isinstance(self.g_factory, ProjRouter) or (isinstance(self.g_factory, VowpRouter) and self.g_factory._fixed): return
 
         assert mode in ['update','insert']
 
@@ -292,7 +285,7 @@ class CMT:
 
         mem_key_err_pairs = [ (k, (val-v)**2) for k,v in leaf.memories.items() ]
         mem_keys, mem_errs = zip(*mem_key_err_pairs)
-        
+
         self.f.update(key, mem_keys, mem_errs, weight)
 
 class DCI:

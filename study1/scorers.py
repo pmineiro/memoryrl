@@ -152,7 +152,7 @@ class RankScorer(Scorer):
     def __str__(self) -> str:
         return self.__repr__()
 
-class RankScorer4(Scorer):
+class RankScorer2(Scorer):
 
     def __init__(self, base:str, X: Sequence[str] = ['x','a'], F:Sequence[str] = None):
 
@@ -163,11 +163,14 @@ class RankScorer4(Scorer):
             f"-b {bits}",
             f"--power_t {0}",
             f"--random_seed {1}",
-            "--noconstant",
             "--coin",
+            "--noconstant",
             "--loss_function squared",
             "--min_prediction 0",
-            "--max_prediction 1000"
+            "--max_prediction 100",
+            "--interactions xx",
+            "--interactions zz",
+            "--interactions xz",
         ]
 
         self._X    = tuple(X)
@@ -224,7 +227,6 @@ class RankScorer4(Scorer):
         self._weights = []
 
     def _bns(self, key1, key2) -> Tuple[float, dict]:
-
         diff_x = self._sub(key1.raw(self._X), key2.raw(self._X))
         diff_f = diff_x if self._X == self._F else self._sub(key1.raw(self._F), key2.raw(self._F))
 
@@ -245,16 +247,16 @@ class RankScorer4(Scorer):
 
         if key1 == key2: assert base == 0
 
-        return base, {'x': diff_x }
+        return base, {'x': key1.raw(self._X), 'z': key2.raw(self._X) }
 
     def _predict(self, key1, key2):
         base, ns = self._bns(key1,key2)
-        pred = self.vw.predict(self.vw.make_example(ns, f"{0} {0} {0}"))
+        pred = self.vw.predict(self.vw.make_example(ns, f"{0} {0} {base}"))
         return pred
 
     def _learn(self, key1, key2, label, weight) -> pyvw.example:
         base, ns = self._bns(key1,key2)
-        self.vw.learn(self.vw.make_example(ns, f"{label*base} {weight} {0}"))
+        self.vw.learn(self.vw.make_example(ns, f"{label} {weight} {base}"))
 
     def _cos_dist(self, query_key, memory_key) -> float:
         x1 = query_key.raw(self._F)
@@ -280,10 +282,12 @@ class RankScorer4(Scorer):
             return [ abs(v1-v2) for v1,v2 in zip(x1,x2) ]
 
     def __repr__(self) -> str:
-        return f"Rank4{self.args}"
+        return f"Rank2{self.args}"
 
     def __str__(self) -> str:
         return self.__repr__()
+
+
 
 class DistScorer(Scorer):
 
