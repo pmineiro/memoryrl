@@ -21,7 +21,7 @@ from coba.learners     import VowpalEpsilonLearner, CorralLearner, EpsilonBandit
 #json       = f"./study1/experiments/{experiment}.json"
 #log        = f"./study1/outcomes/{experiment}_31.log.gz"
 log        = "./study1/outcomes/full-openml-class-13.log.gz"
-config     = {"processes": 128, "chunk_by":'task', 'maxchunksperchild': 0 }
+config     = {"processes": 128, "chunk_by":'task', 'maxchunksperchild': 2 }
 
 epsilon    = 0.1
 

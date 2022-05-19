@@ -104,8 +104,6 @@ class MemorizedLearner1:
 
         memory_key = MemoryKey(context, action)
 
-        self._cmt.update(key=memory_key, outcome=reward, weight=1/(n_actions*probability))
-
         learn_start = time.time()
         self._cmt.insert(key=memory_key, value=reward, weight=1/(n_actions*probability))
         self._times[1] += time.time()-learn_start

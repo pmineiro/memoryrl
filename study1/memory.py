@@ -81,22 +81,16 @@ class CMT:
 
         if key in self.leaf_by_key: return
 
+        self.__update(key=key, outcome=value, weight=weight)
+
         self.__update_routers(key, value, weight, mode="insert")
         self.__insert_leaf(list(self.__path(key,self.root))[-1], key, value, weight)
         self.__update_scorer(self.leaf_by_key[key], key, value, weight, mode="insert")
 
-    def update(self, key: MemKey, outcome: float, weight: float) -> None:
-        assert 0 <= outcome <= 1
-        assert 0 <= weight
+    def memories(self, key: MemKey) -> Dict[MemKey, MemVal]:
+        return list(self.__path(key, self.root))[-1].memories
 
-        if self.root.n == 0: return
-
-        self.__update_omega(key, outcome)
-        self.__update_routers(key, outcome, weight, mode="update")
-        self.__update_scorer(list(self.__path(key,self.root))[-1], key, outcome, weight, mode="update")
-        self.__reroute()
-
-    def delete(self, key: MemKey) -> None:
+    def __delete(self, key: MemKey) -> None:
         assert key in self.leaf_by_key # deleting something not in the memory ...
 
         leaf = self.leaf_by_key.pop(key)
@@ -125,8 +119,16 @@ class CMT:
                 self.root = other_child
                 other_child.parent = None
 
-    def memories(self, key: MemKey) -> Dict[MemKey, MemVal]:
-        return list(self.__path(key, self.root))[-1].memories
+    def __update(self, key: MemKey, outcome: float, weight: float) -> None:
+        assert 0 <= outcome <= 1
+        assert 0 <= weight
+
+        if self.root.n == 0: return
+
+        self.__update_omega(key, outcome)
+        self.__update_routers(key, outcome, weight, mode="update")
+        self.__update_scorer(list(self.__path(key,self.root))[-1], key, outcome, weight, mode="update")
+        self.__reroute()
 
     def __update_omega(self, key: MemKey, outcome:float) -> None:
         if self.mlr > 0:
@@ -196,7 +198,7 @@ class CMT:
 
             old_n = self.root.n
 
-            self.delete(x)
+            self.__delete(x)
             assert self.root.n == old_n-1
 
             self.insert(x, o, 1)
