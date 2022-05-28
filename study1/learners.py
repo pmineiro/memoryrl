@@ -3,7 +3,7 @@ import math
 
 from typing import Hashable, Sequence, Dict, Any
 
-from memory import CMT
+from memory import EMT
 
 from coba.learners import VowpalMediator
 from coba.encodings import InteractionsEncoder
@@ -47,9 +47,9 @@ class MemoryKey:
     def __eq__(self, __o: object) -> bool:
         return isinstance(__o, MemoryKey) and self.x == __o.x and self.a == __o.a
 
-class MemorizedLearner1:
+class EpisodicLearner:
 
-    def __init__(self, epsilon: float, cmt: CMT) -> None:
+    def __init__(self, epsilon: float, cmt: EMT) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 
@@ -108,9 +108,9 @@ class MemorizedLearner1:
         self._cmt.insert(key=memory_key, value=reward, weight=1/(n_actions*probability))
         self._times[1] += time.time()-learn_start
 
-class MemorizedLearner2:
+class ComboLearner:
 
-    def __init__(self, epsilon: float, cmt: CMT, X:str, coin:bool, constant:bool) -> None:
+    def __init__(self, epsilon: float, cmt: EMT, X:str, coin:bool, constant:bool) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 

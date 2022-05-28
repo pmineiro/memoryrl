@@ -1,4 +1,7 @@
+import time
 import math
+import operator
+import itertools
 
 from abc import ABC, abstractmethod
 from typing import Sequence, Tuple
@@ -37,6 +40,8 @@ class RankScorer(Scorer):
             "--min_prediction 0",
             "--max_prediction 3"
         ]
+
+        self.times = [0,0,0]
 
         self._X    = tuple(X)
         self._F    = tuple(F or X)
@@ -105,7 +110,9 @@ class RankScorer(Scorer):
             base = self._cos_dist(key1, key2)
             assert 0 <= base and base <= 1
         elif self._base == "exp":
-            base = 1-math.exp(-self._l2_norm(diff_f))
+            #l1_norm is about 8x faster than l2_norm when isolated...
+            #and gives an end to end decrease in run time of approx 25%
+            base = 1-math.exp(-self._l1_norm(diff_f))
             assert 0 <= base and base <= 1
         else:
             raise Exception("Unrecognized Base")
@@ -115,26 +122,36 @@ class RankScorer(Scorer):
         return base, {'x': diff_x }
 
     def _predict(self, key1, key2):
+        start = time.time()
         base, ns = self._bns(key1,key2)
+        self.times[0] += time.time()-start
+
+        start = time.time()
         pred = self.vw.predict(self.vw.make_example(ns, f"{0} {0} {base}"))
+        self.times[1] += time.time()-start
+
         return pred
 
     def _learn(self, key1, key2, label, weight) -> pyvw.example:
         base, ns = self._bns(key1,key2)
         self.vw.learn(self.vw.make_example(ns, f"{label} {weight} {base}"))
 
-    def _cos_dist(self, query_key, memory_key) -> float:
-        x1 = query_key.raw(self._F)
-        x2 = memory_key.raw(self._F)
-        return (1-self._dot(x1,x2)/math.sqrt(self._dot(x1, x1)*self._dot(x2, x2)))/2
+    def _cos_dist(self, key1, key2) -> float:
+        x1 = key1.raw(self._F)
+        x2 = key2.raw(self._F)
+        return (1-self._dot2(x1,x2)/math.sqrt(self._dot1(x1)*self._dot1(x2)))/2
 
     def _l2_norm(self, x) -> float:
-        return math.sqrt(self._dot(x,x))
+        return math.sqrt(self._dot1(x))
 
     def _l1_norm(self, x) -> float:
         return sum(x.values()) if isinstance(x,dict) else sum(x)
 
-    def _dot(self, x1, x2):
+    def _dot1(self, x):
+        values = x.values() if isinstance(x,dict) else x
+        return sum(map(operator.mul,values,values))            
+
+    def _dot2(self, x1, x2):
         if isinstance(x1, dict):
             return sum(x1[k]*x2[k] for k in (x1.keys() & x2.keys()))
         else:
@@ -142,7 +159,19 @@ class RankScorer(Scorer):
 
     def _sub(self, x1, x2):
         if isinstance(x1,dict):
-            return { k:abs(x1.get(k,0)-x2.get(k,0)) for k in x1.keys() | x2.keys() }
+            short = x1 if len(x1) < len(x2) else x2
+            long  = x2 if len(x1) < len(x2) else x1
+
+            sub = dict(long)
+
+            for key,val in short.items():
+                if key in sub:
+                    sub[key] = abs(sub[key]-val)
+                else:
+                    sub[key] = val
+            return sub
+
+            #return { k:abs(x1.get(k,0)-x2.get(k,0)) for k in x1.keys() | x2.keys() }
         else:
             return [ abs(v1-v2) for v1,v2 in zip(x1,x2) ]
 
@@ -240,7 +269,7 @@ class RankScorer2(Scorer):
             base = self._cos_dist(key1, key2)
             assert 0 <= base and base <= 1
         elif self._base == "exp":
-            base = 1-math.exp(-self._l2_norm(diff_f))
+            base = 1-math.exp(-self._l1_norm(diff_f))
             assert 0 <= base and base <= 1
         else:
             raise Exception("Unrecognized Base")

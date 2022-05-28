@@ -37,7 +37,7 @@ class Node:
     def depth(self):
         return 1 + self.parent.depth if self.parent else 1
 
-class CMT:
+class EMT:
 
     def __init__(self,
         max_mem:int,
@@ -45,7 +45,7 @@ class CMT:
         scorer: Scorer,
         c:Splitter,
         d:int,
-        alpha:float=0.25, 
+        alpha:float=0.25,
         mlr:float = 0,
         max_depth = None,
         rng:int = 1337):
@@ -81,11 +81,12 @@ class CMT:
 
         if key in self.leaf_by_key: return
 
-        self.__update(key=key, outcome=value, weight=weight)
-
+        self.__update_omega(key, value)
+        self.__update_scorer(list(self.__path(key,self.root))[-1], key, value, weight, mode="update")
         self.__update_routers(key, value, weight, mode="insert")
         self.__insert_leaf(list(self.__path(key,self.root))[-1], key, value, weight)
         self.__update_scorer(self.leaf_by_key[key], key, value, weight, mode="insert")
+        self.__reroute()
 
     def memories(self, key: MemKey) -> Dict[MemKey, MemVal]:
         return list(self.__path(key, self.root))[-1].memories
@@ -118,17 +119,6 @@ class CMT:
             if not grand_parent:
                 self.root = other_child
                 other_child.parent = None
-
-    def __update(self, key: MemKey, outcome: float, weight: float) -> None:
-        assert 0 <= outcome <= 1
-        assert 0 <= weight
-
-        if self.root.n == 0: return
-
-        self.__update_omega(key, outcome)
-        self.__update_routers(key, outcome, weight, mode="update")
-        self.__update_scorer(list(self.__path(key,self.root))[-1], key, outcome, weight, mode="update")
-        self.__reroute()
 
     def __update_omega(self, key: MemKey, outcome:float) -> None:
         if self.mlr > 0:
@@ -285,10 +275,10 @@ class CMT:
         assert leaf.is_leaf
         assert mode in ['update','insert'] 
 
-        mem_key_err_pairs = [ (k, (val-v)**2) for k,v in leaf.memories.items() ]
-        mem_keys, mem_errs = zip(*mem_key_err_pairs)
-
-        self.f.update(key, mem_keys, mem_errs, weight)
+        if leaf.memories:
+            mem_key_err_pairs = [ (k, (val-v)**2) for k,v in leaf.memories.items() ]
+            mem_keys, mem_errs = zip(*mem_key_err_pairs)
+            self.f.update(key, mem_keys, mem_errs, weight)
 
 class DCI:
 

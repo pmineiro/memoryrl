@@ -1,9 +1,7 @@
 from itertools import tee
 from typing import Tuple, Iterable
 
-from matplotlib import pyplot as plt
-
-from learners import MemorizedLearner1
+from learners import EpisodicLearner
 from coba.learners import Learner
 from coba.environments import Interaction
 from coba.experiments import EvaluationTask, OnlineOnPolicyEvalTask
@@ -24,6 +22,8 @@ class FinalPrintEvaluationTask(EvaluationTask):
     def process(self, learner: Learner, interactions: Iterable[Interaction]) -> Iterable[dict]:
 
         d = list(OnlineOnPolicyEvalTask().process(learner,interactions))
+
+        print(learner._cmt.f.times)
 
         # if isinstance(learner, MemorizedLearner):
         #     print(f"s: {learner._cmt.f.t}")
