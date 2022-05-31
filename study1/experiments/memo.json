@@ -1,5 +1,0 @@
-{
-    "simulations": [ 
-        [ "Memorizable", { "Shuffle": [100], "method": "foreach" }, {"Take": 2000 } ] 
-    ]
-}

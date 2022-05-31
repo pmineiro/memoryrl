@@ -6,7 +6,7 @@ from itertools   import count
 from collections import Counter
 from typing      import Dict, Any, Tuple, Hashable, Iterable, List
 
-from routers   import RouterFactory, Router, ProjRouter, VowpRouter
+from routers   import RouterFactory, Router, EigenRouter, VowpRouter
 from scorers   import Scorer
 from splitters import Splitter
 
@@ -232,7 +232,7 @@ class EMT:
         #direction is no longer used because we query the left and right
         #val       is no longer used because we use the score from the left and the right
 
-        if not isinstance(self.g_factory,ProjRouter):
+        if not isinstance(self.g_factory,EigenRouter):
             _, left_val, left_score = self.__query(key, node.left)
             _, right_val, right_score = self.__query(key, node.right)
 
@@ -253,7 +253,7 @@ class EMT:
 
     def __update_routers(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
 
-        if isinstance(self.g_factory, ProjRouter) or (isinstance(self.g_factory, VowpRouter) and self.g_factory._fixed): return
+        if isinstance(self.g_factory, EigenRouter) or (isinstance(self.g_factory, VowpRouter) and self.g_factory._fixed): return
 
         assert mode in ['update','insert']
 

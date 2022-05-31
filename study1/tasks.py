@@ -23,7 +23,8 @@ class FinalPrintEvaluationTask(EvaluationTask):
 
         d = list(OnlineOnPolicyEvalTask().process(learner,interactions))
 
-        print(learner._cmt.f.times)
+        if isinstance(learner, EpisodicLearner):
+            print(learner._cmt.f.times)
 
         # if isinstance(learner, MemorizedLearner):
         #     print(f"s: {learner._cmt.f.t}")

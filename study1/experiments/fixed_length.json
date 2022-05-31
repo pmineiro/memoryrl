@@ -9,6 +9,6 @@
         "$shuffles"  : { "Shuffle"         : [ "$"                                                ], "for": {"range":"$n_shuffles"} }
     },
     "environments": [
-        ["$openmls", "$scale", "$shuffles" ]
+        ["$openmls", "$scale", "$shuffles", { "Where": {"n_interactions":"$n_take" } } ]
     ]
 }

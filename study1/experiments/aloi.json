@@ -1,5 +1,0 @@
-{
-    "simulations": [ 
-        [ {"OpenmlSimulation": 1592}, { "Shuffle": [111], "method": "foreach" }, {"Take": 50000 } ] 
-    ]
-}

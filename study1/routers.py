@@ -40,7 +40,7 @@ class ConstRouter(Router):
     def update(self, query_key, label, weight) -> None:
         pass
 
-class ProjRouter(RouterFactory):
+class EigenRouter(RouterFactory):
 
     class _Router(Router):
 
@@ -56,9 +56,9 @@ class ProjRouter(RouterFactory):
         def update(self, query_key, label, weight):
             pass
 
-    def __init__(self, proj="PCA", features = ['x'], samples=90) -> None:
+    def __init__(self, method="PCA", features = ['x'], samples=90) -> None:
         self.features = tuple(features)
-        self.proj     = proj
+        self.proj     = method
         self.samples  = samples
 
     def create(self, keys2split) -> _Router:
@@ -117,7 +117,7 @@ class ProjRouter(RouterFactory):
             projector = max_projector.T
             boundary  = np.median(max_projections)
 
-        return ProjRouter._Router(self.features, projector, boundary)
+        return EigenRouter._Router(self.features, projector, boundary)
 
     def __str__(self) -> str:
 
@@ -168,7 +168,7 @@ class VowpRouter(RouterFactory):
         self._args  = (tuple(X),base,fixed)
 
     def create(self, keys2split) -> _Router:
-        init = ProjRouter(proj=self._base).create(keys2split) if self._base in ["PCA","RNG"] else ConstRouter(0)
+        init = EigenRouter(method=self._base).create(keys2split) if self._base in ["PCA","RNG"] else ConstRouter(0)
         n_allowed_updates = len(keys2split) if self._fixed else float('inf')
         return VowpRouter._Router(self._X, init, n_allowed_updates)
 

@@ -17,7 +17,7 @@ class MemoryKey:
 
         self.x = context
         self.a = action
-        
+
         self.raw_cache = {}
         self.np_cache = {}
 
@@ -60,7 +60,7 @@ class EpisodicLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'memorized_taken1','e':self._epsilon, **self._cmt.params }
+        return { 'family': 'EpisodicLearner','e':self._epsilon, **self._cmt.params }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -136,7 +136,7 @@ class ComboLearner:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'family': 'memorized_taken2', 'e': self._epsilon, **self._cmt.params, "other": self._args }
+        return { 'family': 'ComboLearner', 'e': self._epsilon, **self._cmt.params, "other": self._args }
 
     def predict(self, context: Hashable, actions: Sequence[Hashable]) -> Sequence[float]:
         """Choose which action index to take."""
@@ -147,34 +147,20 @@ class ComboLearner:
            print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
            print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
-        predict_start = time.time()
-
-        ms = [ self._cmt.query(MemoryKey(context, a)) for a in actions ]
-
-        adfs = [ {'a':a, 'm':[m[0],m[1],m[0]*m[1]] }  for a,m in zip(actions,ms) ]
-        probs = self._vw.predict(self._vw.make_examples({'x':self._flat(context)}, adfs, None))
-
-        self._times[0] += time.time()-predict_start
+        memories = [ self._cmt.query(MemoryKey(context, a)) for a in actions ]
+        adfs     = [ {'a':a, 'm':[m[0],m[1],m[0]*m[1]] }  for a,m in zip(actions,memories) ]
+        probs    = self._vw.predict(self._vw.make_examples({'x':self._flat(context)}, adfs, None))
 
         return probs, (actions,adfs)
 
     def learn(self, context: Hashable, action: Hashable, reward: float, probability: float, predict_info: Any) -> None:
         """Learn about the result of an action that was taken in a context."""
 
-        learn_start = time.time()
-
         actions,adfs = predict_info
         n_actions    = len(actions)
 
-        memory_key = MemoryKey(context, action)
-
-        self._cmt.update(key=memory_key, outcome=reward, weight=1/(n_actions*probability))
-        self._cmt.insert(key=memory_key, value=reward, weight=1/(n_actions*probability))
-
-        self._times[1] += time.time()-learn_start
-
-        labels  = self._labels(actions, action, reward, probability)
-
+        self._cmt.insert(key=MemoryKey(context, action), value=reward, weight=1/(n_actions*probability))
+        labels = self._labels(actions, action, reward, probability)
         self._vw.learn(self._vw.make_examples({'x':self._flat(context)}, adfs, labels))
 
     def _labels(self,actions,action,reward:float,prob:float):
