@@ -1,4 +1,5 @@
 import os
+import timeit
 
 #this is taken from https://github.com/xianyi/OpenBLAS
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -27,18 +28,16 @@ if __name__ == '__main__':
    learners = [
       VowpalEpsilonLearner(epsilon, features=["a","xa","xxa"]),
       EpisodicLearner     (epsilon, EMT(LruBounds(1000), EigenRouter(method="RNG"), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0)),
-      EpisodicLearner     (epsilon, EMT(LruBounds(2000), EigenRouter(method="RNG"), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0)),
-      EpisodicLearner     (epsilon, EMT(LruBounds(3000), EigenRouter(method="RNG"), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0)),
+      EpisodicLearner     (epsilon, EMT(NoBounds()     , EigenRouter(method="RNG"), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0)),
       ComboLearner        (epsilon, EMT(LruBounds(1000), EigenRouter(method="RNG"), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0), "xxa", False, True),
-      ComboLearner        (epsilon, EMT(LruBounds(2000), EigenRouter(method="RNG"), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0), "xxa", False, True),
-      ComboLearner        (epsilon, EMT(LruBounds(3000), EigenRouter(method="RNG"), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0), "xxa", False, True)
+      ComboLearner        (epsilon, EMT(NoBounds()     , EigenRouter(method="RNG"), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0), "xxa", False, True),
    ]
 
    description = "An experiment to evalute LRU bounding in episodic and combo on the neurips template."
 
    #environments = Environments.from_template("./study1/experiments/sanity.json", n_shuffle=1, n_take=400)
-   environments = Environments.from_template("./study1/experiments/neurips.json", n_shuffle=5, n_take=4000)
-   #environments = Environments.from_template("./study1/experiments/fixed_length.json", n_shuffle=1, n_take=9000)
+   #environments = Environments.from_template("./study1/experiments/neurips.json", n_shuffle=5, n_take=4000)
+   environments = Environments.from_template("./study1/experiments/fixed_length.json", n_shuffle=1, n_take=10000)
 
    result = Experiment(environments, learners, description, environment_task=SimpleEnvironmentTask(), evaluation_task=SlimOnlineOnPolicyEvalTask()).config(**config).evaluate(log)
    result.filter_fin().plot_learners(y='reward')

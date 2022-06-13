@@ -1,8 +1,8 @@
 import time
 import math
 import operator
-import itertools
 
+from collections import Counter
 from abc import ABC, abstractmethod
 from typing import Sequence, Tuple
 
@@ -145,7 +145,7 @@ class RankScorer(Scorer):
         return math.sqrt(self._dot1(x))
 
     def _l1_norm(self, x) -> float:
-        return sum([abs(v) for v in x.values()]) if isinstance(x,dict) else sum([abs(v) for v in x])
+        return sum(x.values()) if isinstance(x,dict) else sum(x)
 
     def _dot1(self, x):
         values = x.values() if isinstance(x,dict) else x
@@ -159,21 +159,15 @@ class RankScorer(Scorer):
 
     def _sub(self, x1, x2):
         if isinstance(x1,dict):
-            short = x1 if len(x1) < len(x2) else x2
-            long  = x2 if len(x1) < len(x2) else x1
-
-            sub = dict(long)
-
+            short,long = (x1,x2) if len(x1) < len(x2) else (x2,x1)
+            long = dict(long)
             for key,val in short.items():
-                if key in sub:
-                    sub[key] = abs(sub[key]-val)
-                else:
-                    sub[key] = val
-            return sub
-
-            #return { k:abs(x1.get(k,0)-x2.get(k,0)) for k in x1.keys() | x2.keys() }
+                long[key] = val if key not in long else long[key]-val
+            for key,val in long.items():
+                if val < 0: long[key] = -val
+            return long
         else:
-            return [ abs(v1-v2) for v1,v2 in zip(x1,x2) ]
+            return [abs(v1-v2) for v1,v2 in zip(x1,x2)]
 
     def __repr__(self) -> str:
         return f"Rank{self.args}"
