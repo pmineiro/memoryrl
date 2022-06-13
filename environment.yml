@@ -2,7 +2,7 @@ name: memoryrl
 channels:
   - defaults
 dependencies:
-    - python=3.9.*
+    - python=3.10.*
     - pip=21.0.*
     - pip:
         - numpy
