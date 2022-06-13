@@ -1,12 +1,12 @@
 {
     "variables": {
-        "$n_shuffles": 1,
-        "$n_take"    : 400,
-        "$dataids"   : [251,76,180,722,139],
+        "$n_shuffle": 1,
+        "$n_take"   : 400,
+        "$dataids"  : [251,76,180,722,139],
 
-        "$openml" : { "OpenmlSimulation": { "data_id":"$", "cat_as_str": true, "take":"$n_take"}, "for": "$dataids"              },
-        "$scale"  : { "Scale"           : [ 0, "minmax"                                        ]                                 },
-        "$shuffle": { "Shuffle"         : [ "$"                                                ], "for": {"range":"$n_shuffles"} }
+        "$openml" : { "OpenmlSimulation": { "data_id":"$", "cat_as_str": true, "take":"$n_take"}, "for": "$dataids"             },
+        "$scale"  : { "Scale"           : [ 0, "minmax"                                        ]                                },
+        "$shuffle": { "Shuffle"         : [ "$"                                                ], "for": {"range":"$n_shuffle"} }
     },
     "environments": [
         ["$openml", "$scale", "$shuffle"]
