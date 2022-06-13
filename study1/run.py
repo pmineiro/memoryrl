@@ -18,7 +18,7 @@ from coba.environments import Environments
 from coba.experiments  import Experiment, ClassEnvironmentTask, SimpleEnvironmentTask
 from coba.learners     import VowpalEpsilonLearner
 
-log    = "./study1/outcomes/neurips-1.log.gz"
+log    = "./study1/outcomes/fixed-1.log.gz"
 config = {"processes": 1, "chunk_by":'task', 'maxchunksperchild': 0 }
 
 epsilon    = 0.1
@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
    #environments = Environments.from_template("./study1/experiments/sanity.json", n_shuffle=1, n_take=400)
    #environments = Environments.from_template("./study1/experiments/neurips.json", n_shuffle=5, n_take=4000)
-   environments = Environments.from_template("./study1/experiments/fixed_length.json", n_shuffle=1, n_take=10000)
+   environments = Environments.from_template("./study1/experiments/fixed.json", n_shuffle=1, n_take=10000)
 
    result = Experiment(environments, learners, description, environment_task=SimpleEnvironmentTask(), evaluation_task=SlimOnlineOnPolicyEvalTask()).config(**config).evaluate(log)
    result.filter_fin().plot_learners(y='reward')
