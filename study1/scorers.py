@@ -110,8 +110,8 @@ class RankScorer(Scorer):
             base = self._cos_dist(key1, key2)
             assert 0 <= base and base <= 1
         elif self._base == "exp":
-            #l1_norm is about 8x faster than l2_norm when isolated...
-            #and gives an end to end decrease in run time of approx 25%
+            #l1_norm is about 8x faster than l2_norm in isolation...
+            #end to end l1_norm gives a decrease in run time of approx 25% compared to l2_norm
             base = 1-math.exp(-self._l1_norm(diff_f))
             assert 0 <= base and base <= 1
         else:
@@ -145,11 +145,11 @@ class RankScorer(Scorer):
         return math.sqrt(self._dot1(x))
 
     def _l1_norm(self, x) -> float:
-        return sum(x.values()) if isinstance(x,dict) else sum(x)
+        return sum([abs(v) for v in x.values()]) if isinstance(x,dict) else sum([abs(v) for v in x])
 
     def _dot1(self, x):
         values = x.values() if isinstance(x,dict) else x
-        return sum(map(operator.mul,values,values))            
+        return sum(map(operator.mul,values,values))
 
     def _dot2(self, x1, x2):
         if isinstance(x1, dict):
@@ -296,7 +296,7 @@ class RankScorer2(Scorer):
         return math.sqrt(self._dot(x,x))
 
     def _l1_norm(self, x) -> float:
-        return sum(x.values()) if isinstance(x,dict) else sum(x)
+        return sum([abs(v) for v in x.values()]) if isinstance(x,dict) else sum([abs(v) for v in x])
 
     def _dot(self, x1, x2):
         if isinstance(x1, dict):
