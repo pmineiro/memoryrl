@@ -9,6 +9,7 @@ from typing      import Dict, Any, Tuple, Hashable, Iterable, List
 from routers   import RouterFactory, Router, EigenRouter, VowpRouter
 from scorers   import Scorer
 from splitters import Splitter
+from bounders  import Bounder
 
 from coba.random import CobaRandom, shuffle
 
@@ -40,26 +41,22 @@ class Node:
 class EMT:
 
     def __init__(self,
-        max_mem:int,
-        router: RouterFactory,
-        scorer: Scorer,
-        c:Splitter,
-        d:int,
-        alpha:float=0.25,
-        mlr:float = 0,
-        max_depth = None,
-        rng:int = 1337):
+        bounder       : Bounder,
+        router_factory: RouterFactory,
+        scorer        : Scorer,
+        splitter      : Splitter,
+        d             : int,
+        alpha         : float,
+        rng           : int = 1337) -> None:
 
-        self.max_mem   = max_mem
-        self.g_factory = router
-        self.f         = scorer
-        self.alpha     = alpha
-        self.c         = c
-        self.d         = d
-        self.rng       = CobaRandom(rng)
-        self.node_ids  = iter(count())
-        self.mlr       = mlr
-        self.max_depth = max_depth
+        self.bounder        = bounder
+        self.router_factory = router_factory
+        self.scorer         = scorer
+        self.splitter       = splitter
+        self.d              = d
+        self.alpha          = alpha
+        self.rng            = CobaRandom(rng)
+        self.node_ids       = iter(count())
 
         self.root = Node(next(self.node_ids), None)
         self.leaf_by_key: Dict[MemKey,Node] = {}
@@ -69,23 +66,28 @@ class EMT:
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'type':'CMT', 'm': self.max_mem, 'c': str(self.c), 'd': self.d, "a": self.alpha, "scr": str(self.f), "rou": str(self.g_factory) }
+        return { 'type':'EMT', 'b': str(self.bounder), 'c': str(self.splitter), 'f': str(self.scorer), 'g': str(self.router_factory), 'd': self.d, 'a': self.alpha }
 
     def query(self, key) -> Tuple[MemVal,MemScore]:
-
+        
         if self.root.n == 0: return [0,0]
-
-        return self.__query(key, self.root)[1:3]
+        _key,_val,_score = self.__query(key, self.root)
+        
+        self.__bound(_key)
+        return _val,_score
 
     def insert(self, key: MemKey, value: MemVal, weight: float):
 
         if key in self.leaf_by_key: return
 
-        self.__update_omega(key, value)
         self.__update_scorer(list(self.__path(key,self.root))[-1], key, value, weight, mode="update")
         self.__update_routers(key, value, weight, mode="insert")
         self.__insert_leaf(list(self.__path(key,self.root))[-1], key, value, weight)
-        self.__update_scorer(self.leaf_by_key[key], key, value, weight, mode="insert")
+
+        #I should test with and without this update...
+        #self.__update_scorer(self.leaf_by_key[key], key, value, weight, mode="insert")
+
+        self.__bound(key)
         self.__reroute()
 
     def memories(self, key: MemKey) -> Dict[MemKey, MemVal]:
@@ -120,16 +122,11 @@ class EMT:
                 self.root = other_child
                 other_child.parent = None
 
-    def __update_omega(self, key: MemKey, outcome:float) -> None:
-        if self.mlr > 0:
-            top_key, top_val = self.__query(key,self.root)[0:2]
-            self.leaf_by_key[top_key].memories[top_key] = self.mlr*outcome + (1-self.mlr)*top_val
-
     def __insert_leaf(self, leaf: Node, insert_key: MemKey, insert_val: MemVal, weight:float) -> None:
 
         assert leaf.is_leaf
 
-        if leaf.n <= self.c(self.root.n) or leaf.depth == self.max_depth:
+        if leaf.n <= self.splitter(self.root.n):
 
             assert insert_key not in self.leaf_by_key
             assert insert_key not in leaf.memories
@@ -145,7 +142,7 @@ class EMT:
             assert leaf.n == len(leaf.memories)
 
         else:
-            
+
             self.splitting = True
 
             split_memories = leaf.memories
@@ -154,7 +151,7 @@ class EMT:
             new_parent          = leaf
             new_parent.left     = Node(next(self.node_ids), new_parent)
             new_parent.right    = Node(next(self.node_ids), new_parent)
-            new_parent.g        = self.g_factory.create(split_keys)
+            new_parent.g        = self.router_factory.create(split_keys)
             new_parent.memories = dict()
 
             for split_key in split_keys:
@@ -171,6 +168,10 @@ class EMT:
             self.__insert_leaf(leaf, insert_key, insert_val, weight)
         
             self.splitting = False
+
+    def __bound(self, key: MemKey) -> None:
+        for item in self.bounder.touch(key): 
+            self.__delete(item)
 
     def __reroute(self) -> None:
 
@@ -204,9 +205,10 @@ class EMT:
             yield node
 
     def __query(self, key: MemKey, init: Node) -> Tuple[MemKey, MemVal, MemScore]:
-        
+
         final_node = list(self.__path(key, init))[-1]
         assert (final_node.is_leaf and final_node.memories) or self.splitting
+        
         memories = final_node.memories
 
         if not memories:
@@ -215,7 +217,7 @@ class EMT:
             top_mem_score = None
         else:
             mem_keys     = list(memories.keys())
-            mem_scores   = self.f.predict(key, mem_keys)
+            mem_scores   = self.scorer.predict(key, mem_keys)
             tie_breakers = self.rng.randoms(len(mem_scores)) #randomly break
             sorted_mems  = list(sorted(zip(mem_scores, tie_breakers, mem_keys)))
 
@@ -225,6 +227,10 @@ class EMT:
 
         return top_mem_key, top_mem_val, top_mem_score
 
+    def __query_bound(self, key: MemKey) -> None:
+        for item in self.bounder.queried(key): 
+            self.__delete(item)
+
     def __update_router(self, node: Node, key: MemKey, val: MemVal, direction: float, mode:str, weight: float) -> None:
 
         assert not node.is_leaf
@@ -232,7 +238,7 @@ class EMT:
         #direction is no longer used because we query the left and right
         #val       is no longer used because we use the score from the left and the right
 
-        if not isinstance(self.g_factory,EigenRouter):
+        if not isinstance(self.router_factory,EigenRouter):
             _, left_val, left_score = self.__query(key, node.left)
             _, right_val, right_score = self.__query(key, node.right)
 
@@ -253,7 +259,7 @@ class EMT:
 
     def __update_routers(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
 
-        if isinstance(self.g_factory, EigenRouter) or (isinstance(self.g_factory, VowpRouter) and self.g_factory._fixed): return
+        if isinstance(self.router_factory, EigenRouter) or (isinstance(self.router_factory, VowpRouter) and self.router_factory._fixed): return
 
         assert mode in ['update','insert']
 
@@ -278,7 +284,7 @@ class EMT:
         if leaf.memories:
             mem_key_err_pairs = [ (k, (val-v)**2) for k,v in leaf.memories.items() ]
             mem_keys, mem_errs = zip(*mem_key_err_pairs)
-            self.f.update(key, mem_keys, mem_errs, weight)
+            self.scorer.update(key, mem_keys, mem_errs, weight)
 
 class DCI:
 

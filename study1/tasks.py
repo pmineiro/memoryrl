@@ -24,7 +24,7 @@ class FinalPrintEvaluationTask(EvaluationTask):
         d = list(OnlineOnPolicyEvalTask().process(learner,interactions))
 
         if isinstance(learner, EpisodicLearner):
-            print(learner._cmt.f.times)
+            print(learner._cmt.scorer.times)
 
         # if isinstance(learner, MemorizedLearner):
         #     print(f"s: {learner._cmt.f.t}")
@@ -46,15 +46,5 @@ class FinalPrintEvaluationTask(EvaluationTask):
         return d
 
 class SlimOnlineOnPolicyEvalTask:
-    
     def process(self, learner: Learner, interactions: Iterable[Interaction]) -> Iterable[dict]:
-
-        for d in OnlineOnPolicyEvalTask(time=False).process(learner,interactions):
-            d.pop('max_reward')
-            d.pop('min_reward')
-            d.pop('min_rank')
-            d.pop('max_rank')
-            d.pop('rank')
-            d.pop('n_actions')
-            
-            yield d
+        return OnlineOnPolicyEvalTask(metrics="reward",time=False).process(learner,interactions)
