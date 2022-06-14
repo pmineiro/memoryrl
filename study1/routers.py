@@ -58,7 +58,7 @@ class EigenRouter(RouterFactory):
 
     def __init__(self, method="PCA", features = ['x'], samples=90) -> None:
         self.features = tuple(features)
-        self.proj     = method
+        self.method   = method
         self.samples  = samples
 
     def create(self, keys2split) -> _Router:
@@ -69,7 +69,7 @@ class EigenRouter(RouterFactory):
             projector = np.array([1])
             boundary  = np.median([key.raw(self.features)[0] for key in keys2split])            
 
-        elif self.proj == "PCA":
+        elif self.method == "PCA":
             if is_sparse:
                 features = sp.vstack([k.mat(self.features) for k in keys2split])
                 center   = sp.vstack([sp.csr_matrix(features.mean(axis=0))]*len(keys2split))
@@ -121,7 +121,77 @@ class EigenRouter(RouterFactory):
 
     def __str__(self) -> str:
 
-        return f"P{(self.proj,self.features,self.samples)}"
+        return f"Eig{(self.method,self.features,self.samples)}"
+
+class AbsDevRouter(RouterFactory):
+
+    class _Router(Router):
+
+        def __init__(self, features, projector, boundary):
+            self._features  = features
+            self._projector = projector
+            self._boundary  = boundary
+
+        def predict(self, query_key):
+            value = (query_key.mat(self._features) @ self._projector)[0] - self._boundary
+            return np.sign(value)*(1-np.exp(-abs(value)))
+
+        def update(self, query_key, label, weight):
+            pass
+
+    def __init__(self, features = ['x'], samples=90) -> None:
+        self.features = tuple(features)
+        self.samples  = samples
+
+    def create(self, keys2split) -> _Router:
+
+        is_sparse = isinstance(keys2split[0].raw(self.features), dict)
+
+        if not is_sparse and len(keys2split[0].raw(self.features)) == 1:
+            projector = np.array([1])
+            boundary  = np.median([key.raw(self.features)[0] for key in keys2split])            
+
+        max_projector   = None
+        max_dispersion  = 0
+        max_projections = None
+
+        raws2split = [k.raw(self.features) for k in keys2split]
+
+        if is_sparse:
+            mat2split  = sp.vstack([k.mat(self.features) for k in keys2split])
+        else:
+            mat2split  = np.vstack([k.mat(self.features) for k in keys2split])
+
+        if is_sparse:
+            indices = list(set(sp.find(mat2split)[1]))
+        else:
+            indices = list(range(len(raws2split[0])))
+
+        for _ in range(self.samples):
+            projector = np.random.randn(len(indices))
+            projector = projector/np.linalg.norm(projector)
+
+            if is_sparse:
+                sparse_projector = np.zeros((mat2split.shape[1]),float)
+                sparse_projector[indices] = projector
+                projector = sparse_projector
+
+            projections = projector @ mat2split.T
+            dispersion  = np.mean(abs(projections - np.median(projections)))
+
+            if dispersion > max_dispersion:
+                max_projector   = projector
+                max_dispersion  = dispersion
+                max_projections = projections
+
+        projector = max_projector.T
+        boundary  = np.median(max_projections)
+
+        return AbsDevRouter._Router(self.features, projector, boundary)
+
+    def __str__(self) -> str:
+
+        return f"Abs{(self.features,self.samples)}"
 
 class VowpRouter(RouterFactory):
 
