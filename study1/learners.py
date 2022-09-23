@@ -35,7 +35,7 @@ class MemoryKey:
             raw=self.raw(features)
             if isinstance(raw,dict):
                 from sklearn.feature_extraction import FeatureHasher
-                self.np_cache[features] = FeatureHasher().fit_transform([raw])
+                self.np_cache[features] = FeatureHasher(alternate_sign=False).fit_transform([raw])
             else:
                 import numpy as np
                 self.np_cache[features] = np.array([raw])
@@ -75,7 +75,7 @@ class EpisodicLearner:
 
         predict_start = time.time()
 
-        rewards = [ self._cmt.query(MemoryKey(context, a))[0] for a in actions]
+        rewards = [ self._cmt.predict(MemoryKey(context, a))[0] for a in actions]
 
         greedy_r = -math.inf
         greedy_A = []
@@ -105,7 +105,7 @@ class EpisodicLearner:
         memory_key = MemoryKey(context, action)
 
         learn_start = time.time()
-        self._cmt.insert(key=memory_key, value=reward, weight=1/(n_actions*probability))
+        self._cmt.learn(key=memory_key, value=reward, weight=1/(n_actions*probability))
         self._times[1] += time.time()-learn_start
 
 class ComboLearner:
@@ -147,7 +147,7 @@ class ComboLearner:
            print(f"MEM {self._i}. avg prediction time {round(self._times[0]/self._i,2)}")
            print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
-        memories = [ self._cmt.query(MemoryKey(context, a)) for a in actions ]
+        memories = [ self._cmt.predict(MemoryKey(context, a)) for a in actions ]
         adfs     = [ {'a':a, 'm':[m[0],m[1],m[0]*m[1]] }  for a,m in zip(actions,memories) ]
         probs    = self._vw.predict(self._vw.make_examples({'x':self._flat(context)}, adfs, None))
 
@@ -159,7 +159,7 @@ class ComboLearner:
         actions,adfs = predict_info
         n_actions    = len(actions)
 
-        self._cmt.insert(key=MemoryKey(context, action), value=reward, weight=1/(n_actions*probability))
+        self._cmt.learn(key=MemoryKey(context, action), value=reward, weight=1/(n_actions*probability))
         labels = self._labels(actions, action, reward, probability)
         self._vw.learn(self._vw.make_examples({'x':self._flat(context)}, adfs, labels))
 

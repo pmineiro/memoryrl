@@ -2,12 +2,12 @@ import time
 import math
 import operator
 
-from collections import Counter
 from abc import ABC, abstractmethod
 from typing import Sequence, Tuple
 
 from coba.random import CobaRandom
-from coba.learners.vowpal import VowpalMediator
+from coba.learners import VowpalMediator
+from coba.encodings import InteractionsEncoder
 
 from vowpalwabbit import pyvw
 
@@ -175,6 +175,7 @@ class RankScorer(Scorer):
     def __str__(self) -> str:
         return self.__repr__()
 
+#not self-consistent
 class RankScorer2(Scorer):
 
     def __init__(self, base:str, X: Sequence[str] = ['x','a'], F:Sequence[str] = None):
@@ -190,9 +191,9 @@ class RankScorer2(Scorer):
             "--noconstant",
             "--loss_function squared",
             "--min_prediction 0",
-            "--max_prediction 100",
-            "--interactions xx",
-            "--interactions zz",
+            "--max_prediction 3",
+            "--ignore_linear x",
+            "--ignore_linear z",
             "--interactions xz",
         ]
 
@@ -263,7 +264,7 @@ class RankScorer2(Scorer):
             base = self._cos_dist(key1, key2)
             assert 0 <= base and base <= 1
         elif self._base == "exp":
-            base = 1-math.exp(-self._l1_norm(diff_f))
+            base = 1-math.exp(-self._l2_norm(diff_f))
             assert 0 <= base and base <= 1
         else:
             raise Exception("Unrecognized Base")
@@ -290,7 +291,7 @@ class RankScorer2(Scorer):
         return math.sqrt(self._dot(x,x))
 
     def _l1_norm(self, x) -> float:
-        return sum([abs(v) for v in x.values()]) if isinstance(x,dict) else sum([abs(v) for v in x])
+        return sum(x.values()) if isinstance(x,dict) else sum(x)
 
     def _dot(self, x1, x2):
         if isinstance(x1, dict):
@@ -309,8 +310,6 @@ class RankScorer2(Scorer):
 
     def __str__(self) -> str:
         return self.__repr__()
-
-
 
 class DistScorer(Scorer):
 
@@ -351,7 +350,7 @@ class DistScorer(Scorer):
 
     def _l2_dist(self, query_key, memory_key) -> float:
         x = self._sub(query_key.raw(self._features), memory_key.raw(self._features))
-        return math.sqrt(self._dot(x,x))
+        return self._dot(x,x)
 
     def _l1_dist(self, query_key, memory_key) -> float:
         x = self._sub(query_key.raw(self._features), memory_key.raw(self._features))

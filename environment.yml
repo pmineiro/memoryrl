@@ -1,14 +1,14 @@
 name: memoryrl
 channels:
-  - defaults
+  - conda-forge
 dependencies:
-    - python=3.10.*
+    - python=3.10.5
     - pip=21.2.*
     - pip:
         - numpy
         - pandas
         - matplotlib
         - notebook
-        - vowpalwabbit==9.1.*
+        - vowpalwabbit==9.3.*
         - sklearn
-        - coba==4.10.*
+        - coba==4.11.*

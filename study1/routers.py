@@ -69,6 +69,32 @@ class EigenRouter(RouterFactory):
             projector = np.array([1])
             boundary  = np.median([key.raw(self.features)[0] for key in keys2split])            
 
+        elif self.method == "Oja":
+            if is_sparse:
+                features = sp.vstack([k.mat(self.features) for k in keys2split])
+                center   = sp.vstack([sp.csr_matrix(features.mean(axis=0))]*len(keys2split))
+            else:
+                features = np.vstack([k.mat(self.features) for k in keys2split])
+                center   = np.vstack([features.mean(axis=0)]*len(keys2split))
+
+            Z = features-center
+            
+            rng = CobaRandom(1)
+            w = np.random.randn(features.shape[1],1) 
+            w = w/np.linalg.norm(w)
+
+            for _ in range(20):
+                n = 1
+                for z in rng.shuffle(list(Z)):
+                    if len(z.shape) == 1:
+                        np.expand_dims(z,0)
+                    w = w+(1/n)*z.T*(z@w)
+                    w = w/np.linalg.norm(w)
+                    n += 1
+            
+            projector = w
+            boundary  = np.median(features @ projector)
+
         elif self.method == "PCA":
             if is_sparse:
                 features = sp.vstack([k.mat(self.features) for k in keys2split])

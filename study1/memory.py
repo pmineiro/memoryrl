@@ -4,14 +4,16 @@ import bisect
 from math        import log
 from itertools   import count
 from collections import Counter
-from typing      import Dict, Any, Tuple, Hashable, Iterable, List
+from typing      import Dict, Any, Tuple, Hashable, Iterable, List, Sequence
 
 from routers   import RouterFactory, Router, EigenRouter, VowpRouter
 from scorers   import Scorer
 from splitters import Splitter
 from bounders  import Bounder
 
+from vowpalwabbit import pyvw
 from coba.random import CobaRandom, shuffle
+from coba.learners import VowpalMediator
 
 MemKey   = Hashable
 MemVal   = Any
@@ -68,15 +70,15 @@ class EMT:
     def params(self) -> Dict[str,Any]:
         return { 'type':'EMT', 'b': str(self.bounder), 'c': str(self.splitter), 'f': str(self.scorer), 'g': str(self.router_factory), 'd': self.d, 'a': self.alpha }
 
-    def query(self, key) -> Tuple[MemVal,MemScore]:
+    def predict(self, key) -> Tuple[MemVal,MemScore]:
         
         if self.root.n == 0: return [0,0]
         _key,_val,_score = self.__query(key, self.root)
         
-        self.__bound(_key)
+        self.__bounded(_key)
         return _val,_score
 
-    def insert(self, key: MemKey, value: MemVal, weight: float):
+    def learn(self, key: MemKey, value: MemVal, weight: float):
 
         if key in self.leaf_by_key: return
 
@@ -87,7 +89,7 @@ class EMT:
         #I should test with and without this update...
         #self.__update_scorer(self.leaf_by_key[key], key, value, weight, mode="insert")
 
-        self.__bound(key)
+        self.__bounded(key)
         self.__reroute()
 
     def memories(self, key: MemKey) -> Dict[MemKey, MemVal]:
@@ -126,7 +128,7 @@ class EMT:
 
         assert leaf.is_leaf
 
-        if leaf.n <= self.splitter(self.root.n):
+        if leaf.n < self.splitter(self.root.n):
 
             assert insert_key not in self.leaf_by_key
             assert insert_key not in leaf.memories
@@ -169,7 +171,7 @@ class EMT:
         
             self.splitting = False
 
-    def __bound(self, key: MemKey) -> None:
+    def __bounded(self, key: MemKey) -> None:
         for item in self.bounder.touch(key): 
             self.__delete(item)
 
@@ -192,7 +194,7 @@ class EMT:
             self.__delete(x)
             assert self.root.n == old_n-1
 
-            self.insert(x, o, 1)
+            self.learn(x, o, 1)
             assert self.root.n == old_n
 
             self.rerouting = False
@@ -226,10 +228,6 @@ class EMT:
             top_mem_score = sorted_mems[0][0]
 
         return top_mem_key, top_mem_val, top_mem_score
-
-    def __query_bound(self, key: MemKey) -> None:
-        for item in self.bounder.queried(key): 
-            self.__delete(item)
 
     def __update_router(self, node: Node, key: MemKey, val: MemVal, direction: float, mode:str, weight: float) -> None:
 
@@ -285,6 +283,56 @@ class EMT:
             mem_key_err_pairs = [ (k, (val-v)**2) for k,v in leaf.memories.items() ]
             mem_keys, mem_errs = zip(*mem_key_err_pairs)
             self.scorer.update(key, mem_keys, mem_errs, weight)
+
+class EMT_VW:
+
+    def __init__(self, eigen: bool, bound:int=-1, scorer:int=3, router:int=2, interactions: Sequence[str]=[], split:int = 100, rng : int = 1337) -> None:
+
+        self._args = (eigen, bound, scorer, router, interactions, split, rng)
+
+        interactions = ' '.join([ f"--interactions {i}" for i in interactions ])
+        init_args = f"{' '.join(self._vw_args(*self._args[0:4],split))} {interactions} --quiet --random_seed {rng}"
+        label_type = 2
+
+        self._vw = VowpalMediator().init_learner(init_args, label_type)
+
+    def __reduce__(self) -> str | tuple[Any, ...]:
+        return (EMT_VW, self._args)
+    
+    def _vw_args(self, eigen:bool, bound:int, scorer:int, router:int, split:int) -> Sequence[str]:
+        if eigen:
+            return [
+                "--eigen_memory_tree",
+                f"--tree {bound}",
+                f"--leaf {split}",
+                f"--scorer {scorer}",
+                f"--router {router}",
+                "--min_prediction 0",
+                "--max_prediction 3",
+                "--coin",
+                "--noconstant",
+                f"--power_t {0}",
+                "--loss_function squared",
+                f"-b {20}"
+                ]
+        else:
+            return [
+                "--memory_tree 16000",
+                "--learn_at_leaf",
+                "--online 1",
+                "--leaf_example_multiplier 7",
+                "--dream_repeats 5"
+            ]
+
+    @property
+    def params(self) -> Dict[str,Any]:
+        return { 'type':'EMT_VW', 'eigen':self._args[0], 'scorer':self._args[2], 'router':self._args[3], 'split': self._args[5], 'bound':self._args[1], 'X': self._args[4]}
+
+    def predict(self, key) -> Tuple[MemVal,MemScore]:
+        return (self._vw.predict(self._vw.make_example({'x': key.raw('x'), 'a': key.raw('a')}, None)),1)
+
+    def learn(self, key: MemKey, value: MemVal, weight: float):
+        self._vw.learn(self._vw.make_example({'x': key.raw('x'), 'a': key.raw('a')}, f"{value} {weight}"))
 
 class DCI:
 
