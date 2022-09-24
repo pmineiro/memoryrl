@@ -1,5 +1,5 @@
-from memory import EMT_VW
-from learners import EpisodicLearner, ComboLearner
+from memory import EMT, CMT
+from learners import EpisodicLearner, StackedLearner
 from tasks import SlimOnlineOnPolicyEvalTask
 
 from coba.environments import Environments
@@ -16,32 +16,33 @@ if __name__ == '__main__':
       VowpalEpsilonLearner(epsilon, features=["a","xa","xxa"]),
 
       # #EMT-CB (self-consistent)
-      EpisodicLearner     (epsilon, EMT_VW(eigen=True , bound=-1, scorer=3, router=2, split=100,  interactions=['xa'])),
+      EpisodicLearner     (epsilon, EMT(split=100, scorer=3, router=2, bound=-1,                       interactions=['xa'])),
       
       # #EMT-CB (not self-consistent)
-      EpisodicLearner     (epsilon, EMT_VW(eigen=True , bound=-1, scorer=4, router=2, split=100,  interactions=['xa'])),
+      EpisodicLearner     (epsilon, EMT(split=100, scorer=4, router=2, bound=-1,                       interactions=['xa'])),
       
       # #CMT-CB
-      EpisodicLearner     (epsilon, EMT_VW(eigen=False,                                           interactions=['xa'])), 
+      EpisodicLearner     (epsilon, CMT(n_nodes=100, leaf_multiplier=15, dream_repeats=10, alpha=0.50, interactions=['xa'])),
 
       # #PEMT
-      ComboLearner        (epsilon, EMT_VW(eigen=True , bound=-1, scorer=3, router=2, split=100,  interactions=['xa']), "xxa", False, True),
+      StackedLearner      (epsilon, EMT(split=100, scorer=3, router=2, bound=-1,                       interactions=['xa']), "xxa", False, True, False),
 
       # #PCMT
-      ComboLearner        (epsilon, EMT_VW(eigen=False, bound=-1,                                 interactions=['xa']), "xxa", False, True),
+      StackedLearner      (epsilon, CMT(n_nodes=100, leaf_multiplier=15, dream_repeats=10, alpha=0.50, interactions=['xa']), "xxa", False, True, False),
 
+      #######TESTING LEARNERS###########
       # #EMT-CB (self-consistent) (python implementation) (we're not using this in the paper its just here for comparison)
-      #EpisodicLearner     (epsilon, EMT(NoBounds(), EigenRouter(method="Oja",features=['x','a']), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0)),
-      #EpisodicLearner     (epsilon, EMT(NoBounds(), EigenRouter(method="PCA",features=['x','a']), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0)),
+      #EpisodicLearner     (epsilon, EMT_PY(NoBounds(), EigenRouter(method="Oja",features=['x','a']), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0)),
+      #EpisodicLearner     (epsilon, EMT_PY(NoBounds(), EigenRouter(method="PCA",features=['x','a']), RankScorer("exp",['x','a','xa']), splitter=ConstSplitter(100), d=0.00, alpha=0)),
    ]
 
-   description = "First pass at the final experiment dataset with all necessary learners. All unbounded trees."
+   description = "Full on 50 replicate run for the ICRL 2023 paper."
    #log         = None#"./study1/outcomes/neurips-2-cmt.log.gz"
-   log         = "./study1/outcomes/neurips-2-vw-5.log.gz"
+   log         = "./study1/outcomes/ICLR-2023-unbounded.log.gz"
 
-   #environments = Environments.from_template("./study1/experiments/sanity.json", n_shuffle=10, n_take=1000)
-   environments = Environments.from_template("./study1/experiments/neurips.json", n_shuffle=1)
+   #environments = Environments.from_template("./study1/experiments/sanity.json", n_shuffle=3, n_take=4000)
+   environments = Environments.from_template("./study1/experiments/neurips.json")
    #environments = Environments.from_template("./study1/experiments/fixed.json", n_shuffle=1, n_take=4000)
 
    result = Experiment(environments, learners, description, environment_task=ClassEnvironmentTask(), evaluation_task=SlimOnlineOnPolicyEvalTask()).config(**config).evaluate(log)
-   result.filter_fin().plot_learners(y='reward')
+   result.filter_fin().plot_learners()

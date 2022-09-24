@@ -1,18 +1,13 @@
-import copy
-import bisect
-
 from math        import log
 from itertools   import count
-from collections import Counter
-from typing      import Dict, Any, Tuple, Hashable, Iterable, List, Sequence
+from typing      import Dict, Any, Tuple, Hashable, Iterable, Sequence
 
 from routers   import RouterFactory, Router, EigenRouter, VowpRouter
 from scorers   import Scorer
 from splitters import Splitter
 from bounders  import Bounder
 
-from vowpalwabbit import pyvw
-from coba.random import CobaRandom, shuffle
+from coba.random import CobaRandom
 from coba.learners import VowpalMediator
 
 MemKey   = Hashable
@@ -20,27 +15,28 @@ MemVal   = Any
 MemScore = float
 Memory   = Tuple[MemKey,MemVal]
 
-class Node:
-    def __init__(self, id: int, parent: 'Node'):
-        self.parent = parent
 
-        self.memories: Dict[MemKey,MemVal] = {}
+class EMT_PY:
+    """The Python implementation of EMT exists to test new ideas more easily. """
+    class Node:
+        def __init__(self, id: int, parent: 'EMT_PY.Node'):
+            self.parent = parent
 
-        self.id            = id
-        self.left : Node   = None
-        self.right: Node   = None
-        self.g    : Router = None
-        self.n    : int    = 0
-    
-    @property
-    def is_leaf(self) -> bool:
-        return self.left is None
+            self.memories: Dict[MemKey,MemVal] = {}
 
-    @property
-    def depth(self):
-        return 1 + self.parent.depth if self.parent else 1
+            self.id                 = id
+            self.left : EMT_PY.Node = None
+            self.right: EMT_PY.Node = None
+            self.g    : Router      = None
+            self.n    : int         = 0
+        
+        @property
+        def is_leaf(self) -> bool:
+            return self.left is None
 
-class EMT:
+        @property
+        def depth(self):
+            return 1 + self.parent.depth if self.parent else 1
 
     def __init__(self,
         bounder       : Bounder,
@@ -60,15 +56,15 @@ class EMT:
         self.rng            = CobaRandom(rng)
         self.node_ids       = iter(count())
 
-        self.root = Node(next(self.node_ids), None)
-        self.leaf_by_key: Dict[MemKey,Node] = {}
+        self.root = EMT_PY.Node(next(self.node_ids), None)
+        self.leaf_by_key: Dict[MemKey,EMT_PY.Node] = {}
 
         self.rerouting = False
         self.splitting = False
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'type':'EMT', 'b': str(self.bounder), 'c': str(self.splitter), 'f': str(self.scorer), 'g': str(self.router_factory), 'd': self.d, 'a': self.alpha }
+        return { 'type':'EMT_PY', 'b': str(self.bounder), 'c': str(self.splitter), 'f': str(self.scorer), 'g': str(self.router_factory), 'd': self.d, 'a': self.alpha }
 
     def predict(self, key) -> Tuple[MemVal,MemScore]:
         
@@ -151,8 +147,8 @@ class EMT:
             split_keys     = list(split_memories.keys())
 
             new_parent          = leaf
-            new_parent.left     = Node(next(self.node_ids), new_parent)
-            new_parent.right    = Node(next(self.node_ids), new_parent)
+            new_parent.left     = EMT_PY.Node(next(self.node_ids), new_parent)
+            new_parent.right    = EMT_PY.Node(next(self.node_ids), new_parent)
             new_parent.g        = self.router_factory.create(split_keys)
             new_parent.memories = dict()
 
@@ -284,294 +280,88 @@ class EMT:
             mem_keys, mem_errs = zip(*mem_key_err_pairs)
             self.scorer.update(key, mem_keys, mem_errs, weight)
 
-class EMT_VW:
+class EMT:
 
-    def __init__(self, eigen: bool, bound:int=-1, scorer:int=3, router:int=2, interactions: Sequence[str]=[], split:int = 100, rng : int = 1337) -> None:
+    def __init__(self, split:int = 100, scorer:int=3, router:int=2, bound:int=-1, interactions: Sequence[str]=[], rng : int = 1337) -> None:
 
-        self._args = (eigen, bound, scorer, router, interactions, split, rng)
+        self._args = (split, scorer, router, bound, interactions, rng)
 
-        interactions = ' '.join([ f"--interactions {i}" for i in interactions ])
-        init_args = f"{' '.join(self._vw_args(*self._args[0:4],split))} {interactions} --quiet --random_seed {rng}"
+        vw_args = [
+            "--eigen_memory_tree",
+            f"--tree {bound}",
+            f"--leaf {split}",
+            f"--scorer {scorer}",
+            f"--router {router}",
+            "--min_prediction 0",
+            "--max_prediction 3",
+            "--coin",
+            "--noconstant",
+            f"--power_t {0}",
+            "--loss_function squared",
+            f"-b {26}",
+            *[ f"--interactions {i}" for i in interactions ]
+        ]
+
+        init_args = f"{' '.join(vw_args)} --quiet --random_seed {rng}"
         label_type = 2
 
         self._vw = VowpalMediator().init_learner(init_args, label_type)
 
     def __reduce__(self) -> str | tuple[Any, ...]:
-        return (EMT_VW, self._args)
+        return (EMT, self._args)
     
-    def _vw_args(self, eigen:bool, bound:int, scorer:int, router:int, split:int) -> Sequence[str]:
-        if eigen:
-            return [
-                "--eigen_memory_tree",
-                f"--tree {bound}",
-                f"--leaf {split}",
-                f"--scorer {scorer}",
-                f"--router {router}",
-                "--min_prediction 0",
-                "--max_prediction 3",
-                "--coin",
-                "--noconstant",
-                f"--power_t {0}",
-                "--loss_function squared",
-                f"-b {20}"
-                ]
-        else:
-            return [
-                "--memory_tree 16000",
-                "--learn_at_leaf",
-                "--online 1",
-                "--leaf_example_multiplier 7",
-                "--dream_repeats 5"
-            ]
-
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'type':'EMT_VW', 'eigen':self._args[0], 'scorer':self._args[2], 'router':self._args[3], 'split': self._args[5], 'bound':self._args[1], 'X': self._args[4]}
+        keys = ['split', 'scorer', 'router', 'bound', 'X']
+        return { 'type':'EMT', **dict(zip(keys,self._args))}
 
     def predict(self, key) -> Tuple[MemVal,MemScore]:
-        return (self._vw.predict(self._vw.make_example({'x': key.raw('x'), 'a': key.raw('a')}, None)),1)
+        ex = self._vw.make_example({'x': key.raw('x'), 'a': key.raw('a')}, None)
+        pr = self._vw.predict(ex)
+        cf = ex.get_confidence()
+        return (pr,cf)
 
     def learn(self, key: MemKey, value: MemVal, weight: float):
         self._vw.learn(self._vw.make_example({'x': key.raw('x'), 'a': key.raw('a')}, f"{value} {weight}"))
 
-class DCI:
+class CMT:
 
-    class Index:
-        def __init__(self, proj, features, keys, samples):
+    def __init__(self, n_nodes:int=100, leaf_multiplier:int=15, dream_repeats:int=5, alpha:float=0.5, coin:bool = True, interactions: Sequence[str]=[], rng : int = 1337) -> None:
 
-            import numpy as np
-            import scipy.sparse as sp
-            from sklearn.decomposition import TruncatedSVD
+        self._args = (n_nodes, leaf_multiplier, dream_repeats, alpha, coin, interactions, rng)
 
-            self.features = tuple(features)
-            raws2split    = [k.raw(self.features) for k in keys]
-            is_sparse     = isinstance(keys[0].raw(self.features), dict)
+        vw_args = [
+            f"--memory_tree {n_nodes}",
+            "--learn_at_leaf",
+            "--online 1",
+            f"--leaf_example_multiplier {leaf_multiplier}",
+            f"--dream_repeats {dream_repeats}",
+            f"--alpha {alpha}",
+            f"--power_t {0}",
+            f"-b {26}",
+            *[ f"--interactions {i}" for i in interactions ]
+        ]
 
-            if is_sparse:
-                all_mat2split  = sp.vstack([k.mat(self.features) for k in keys])
-                rng_mat2split  = sp.vstack([k.mat(self.features) for k in shuffle(keys)[:50]])
-            else:
-                all_mat2split  = np.vstack([k.mat(self.features) for k in keys])
-                rng_mat2split  = np.vstack([k.mat(self.features) for k in shuffle(keys)[:50]])
+        if coin: vw_args.append("--coin")
 
-            if proj=="PCA":
-                if is_sparse:
-                    features = rng_mat2split
-                    center   = sp.vstack([sp.csr_matrix(features.mean(axis=0))]*features.shape[0])
-                else:
-                    features = rng_mat2split
-                    center   = np.vstack([features.mean(axis=0)]*features.shape[0])
+        init_args = f"{' '.join(vw_args)} --quiet --random_seed {rng}"
+        label_type = 2
 
-                max_projector = TruncatedSVD(n_components=1).fit(features-center).components_.astype(float)[0]
-            else:
-                max_projector   = None
-                max_dispersion  = 0
+        self._vw = VowpalMediator().init_learner(init_args, label_type)
 
-                if is_sparse:
-                    indices = list(set(sp.find(rng_mat2split)[1]))
-                else:
-                    indices = list(range(len(raws2split[0])))
-
-                for _ in range(samples):
-                    projector = np.random.randn(len(indices))
-                    projector = projector/np.linalg.norm(projector)
-
-                    if is_sparse:
-                        sparse_projector = np.zeros((rng_mat2split.shape[1]),float)
-                        sparse_projector[indices] = projector
-                        projector = sparse_projector
-
-                    projections = projector @ rng_mat2split.T
-                    dispersion  = projections.var()
-
-                    if dispersion > max_dispersion:
-                        max_projector   = projector
-                        max_dispersion  = dispersion
-
-            self._projector   = max_projector
-            self._memories    = list(keys)
-            self._projections = (max_projector @ all_mat2split.T).tolist()
-
-        def insert(self, key):
-            proj = (key.mat(self.features) @ self._projector)[0]
-            index = bisect.bisect(self._projections, proj)
-
-            self._memories.insert(index, key)
-            self._projections.insert(index, proj)
-
-        def query(self, key, n) -> Iterable[MemKey]:
-            proj = (key.mat(self.features) @ self._projector)[0]
-            index = bisect.bisect(self._projections, proj)
-
-            left_idx  = index-1
-            right_idx = index
-
-            get = lambda i: abs(self._projections[i]-proj) if 0<=i and i<len(self._projections) else float('inf')
-
-            left_val = get(left_idx)
-            right_val = get(right_idx)
-
-            mem_keys = []
-
-            for _ in range(n):
-                if left_val < right_val:
-                    mem_keys.append(self._memories[left_idx])
-                    left_idx -= 1
-                    left_val = get(left_idx)
-                elif left_val > right_val:
-                    mem_keys.append(self._memories[right_idx])
-                    right_idx += 1
-                    right_val = get(right_idx)
-
-            mem_keys.reverse()
-
-            return mem_keys
-
-    def __init__(self, n_index, n_top, n_samples, proj, scorer:Scorer, features = ['x'], rng:int = 1337) -> None:
-        self._features  = features
-        self._n_index   = n_index
-        self._n_top     = n_top
-        self._n_samples = n_samples
-        self.f          = scorer
-        self._proj      = proj
-        
-        self._projectors: List[DCI.Index] = []
-        self._memories: Dict[MemKey,MemVal]  = {}
-        self._index_mems: List[MemKey] = []
-
-        self.rng = CobaRandom(rng)
+    def __reduce__(self) -> str | tuple[Any, ...]:
+        return (CMT, self._args)
 
     @property
     def params(self) -> Dict[str,Any]:
-        return { 'type':'DCI', "n_top": self._n_top, "n_index": self._n_index, "n_samples": self._n_samples, "P": self._proj }
+        keys = ['nodes','multiplier','dreams','alpha','coin','X']
+        return { 'type':'CMT', **dict(zip(keys,self._args)) }
 
-    def query(self, key: MemKey) -> Tuple[MemVal,MemScore]:
+    def predict(self, key) -> Tuple[MemVal,MemScore]:
+        ex = self._vw.make_example({'x': key.raw('x'), 'a': key.raw('a')}, None)
+        pr = self._vw.predict(ex)
+        cf = ex.get_confidence()
+        return (pr,cf)
 
-        memories = self.memories(key)
-
-        if not memories:
-            top_mem_key   = None
-            top_mem_val   = None
-            top_mem_score = None
-        else:
-            mem_keys     = list(memories.keys())
-            mem_scores   = self.f.predict(key, mem_keys)
-            tie_breakers = self.rng.randoms(len(mem_scores))
-            sorted_mems  = list(sorted(zip(mem_scores, tie_breakers, mem_keys)))
-
-            top_mem_key   = sorted_mems[0][2]
-            top_mem_val   = memories[top_mem_key]
-            top_mem_score = sorted_mems[0][0]
-
-        return top_mem_val, top_mem_score
-
-    def insert(self, key: MemKey, value: MemVal, weight: float):
-        self._memories[key] = value
-        self._index_mems.append(key)
-
-        for projector in self._projectors:
-            projector.insert(key)
-
-        if len(self._index_mems) == self._n_index:
-            self._projectors.append(DCI.Index(self._proj, self._features, self._index_mems, self._n_samples))
-            for key in (self._memories.keys() - set(self._index_mems)):
-                self._projectors[-1].insert(key)
-            self._index_mems = []
-
-        self.__update_scorer(key, value, weight, "insert")
-
-    def update(self, key: MemKey, outcome: float, weight: float) -> None:
-        self.__update_scorer(key, outcome, weight, "update")
-
-    def memories(self, key: MemKey) -> Dict[MemKey,MemVal]:
-
-        if self._projectors:
-            votes = Counter()
-
-            for projector in self._projectors:
-                votes = votes + Counter(dict(zip(projector.query(key, self._n_top), count())))
-
-            return { k: self._memories[k] for k,v in votes.most_common(100) }
-        else:
-            return self._memories
-
-    def __update_scorer(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
-
-        assert mode in ['update','insert'] 
-
-        mem_key_err_pairs = [ (k, (val-v)**2) for k,v in self.memories(key).items() ]
-
-        if len(mem_key_err_pairs) == 0: return
-
-        mem_keys, mem_errs = zip(*mem_key_err_pairs)
-        self.f.update(key, mem_keys, mem_errs, weight)
-
-class CMF:
-
-    def __init__(self, n_trees:int, scorer:Scorer, tree) -> None:
-
-        self._tree    = tree
-        self._scorer  = scorer
-        self._rng     = CobaRandom(1)
-        self._trees   = [ copy.deepcopy(tree) for _ in range(n_trees)  ]
-
-    @property
-    def params(self) -> Dict[str,Any]:
-        return { **self._tree.params, 'scr': str(self._scorer), 'type':'CMF', 'T': len(self._trees) }
-
-    def query(self, key: MemKey) -> Tuple[MemVal,MemScore]:
-
-        memories = self.memories(key)
-
-        if not memories:
-            top_mem_key   = None
-            top_mem_val   = 0
-            top_mem_score = 0
-        else:
-            mem_keys     = list(memories.keys())
-            mem_scores   = self._scorer.predict(key, mem_keys)
-            tie_breakers = self._rng.randoms(len(mem_scores)) #randomly break
-            sorted_mems  = list(sorted(zip(mem_scores, tie_breakers, mem_keys)))
-
-            top_mem_key   = sorted_mems[0][2]
-            top_mem_val   = memories[top_mem_key]
-            top_mem_score = sorted_mems[0][0]
-
-        return top_mem_val, top_mem_score
-
-    def insert(self, key: MemKey, value: MemVal, weight: float):
-
-        for tree in self._trees:
-            tree.insert(key,value,weight)
-
-        self.__update_scorer(key, value, weight, "insert")
-
-    def update(self, key: MemKey, outcome: float, weight: float) -> None:
-
-        for tree in self._trees:
-            tree.update(key,outcome,weight)
-
-        self.__update_scorer(key, outcome, weight, "update")
-
-    def memories(self, key: MemKey) -> Dict[MemKey,MemVal]:
-        
-        memories = {}
-        votes = Counter()
-
-        for tree in self._trees:
-            tree_memories = tree.memories(key)
-            memories.update(tree_memories)
-            votes = votes + Counter(tree_memories.keys())
-
-        return { k: memories[k] for k,v in votes.most_common(75) }
-
-    def __update_scorer(self, key: MemKey, val: MemVal, weight:float, mode:str) -> None:
-
-        assert mode in ['update','insert'] 
-
-        mem_key_err_pairs = [ (k, (val-v)**2) for k,v in self.memories(key).items() ]
-
-        if len(mem_key_err_pairs) == 0: return
-
-        mem_keys, mem_errs = zip(*mem_key_err_pairs)
-        self._scorer.update(key, mem_keys, mem_errs, weight)
+    def learn(self, key: MemKey, value: MemVal, weight: float):
+        self._vw.learn(self._vw.make_example({'x': key.raw('x'), 'a': key.raw('a')}, f"{value} {weight}"))

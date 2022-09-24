@@ -7,7 +7,6 @@ from typing import Sequence, Tuple
 
 from coba.random import CobaRandom
 from coba.learners import VowpalMediator
-from coba.encodings import InteractionsEncoder
 
 from vowpalwabbit import pyvw
 

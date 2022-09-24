@@ -9,7 +9,6 @@ from coba.learners import VowpalMediator
 from coba.encodings import InteractionsEncoder
 
 logn = 500
-bits = 20
 
 class MemoryKey:
 
@@ -108,9 +107,9 @@ class EpisodicLearner:
         self._cmt.learn(key=memory_key, value=reward, weight=1/(n_actions*probability))
         self._times[1] += time.time()-learn_start
 
-class ComboLearner:
+class StackedLearner:
 
-    def __init__(self, epsilon: float, cmt: EMT, X:str, coin:bool, constant:bool) -> None:
+    def __init__(self, epsilon: float, cmt: EMT, X:str, coin:bool, constant:bool, conf:bool) -> None:
 
         assert 0 <= epsilon and epsilon <= 1
 
@@ -118,7 +117,8 @@ class ComboLearner:
         self._i       = 0
         self._cmt     = cmt
         self._times   = [0, 0]
-        self._args    = (X, coin, constant)
+        self._conf    = conf
+        self._args    = (X, coin, constant, conf)
 
         if X == 'xa':
             args = f"--quiet --cb_explore_adf --epsilon {epsilon} --ignore_linear x --interactions xa --random_seed {1}"
@@ -148,7 +148,12 @@ class ComboLearner:
            print(f"MEM {self._i}. avg learn      time {round(self._times[1]/self._i,2)}")
 
         memories = [ self._cmt.predict(MemoryKey(context, a)) for a in actions ]
-        adfs     = [ {'a':a, 'm':[m[0],m[1],m[0]*m[1]] }  for a,m in zip(actions,memories) ]
+        
+        if self._conf:
+            adfs     = [ {'a':a, 'm':[m[0],m[1],m[0]*m[1]] }  for a,m in zip(actions,memories) ]
+        else:
+            adfs     = [ {'a':a, 'm':[m[0]]                }  for a,m in zip(actions,memories) ]
+
         probs    = self._vw.predict(self._vw.make_examples({'x':self._flat(context)}, adfs, None))
 
         return probs, (actions,adfs)
