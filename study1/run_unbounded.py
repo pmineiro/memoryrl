@@ -1,12 +1,13 @@
 from memory import EMT, CMT
 from learners import EpisodicLearner, StackedLearner
 from tasks import SlimOnlineOnPolicyEvalTask
+from simulations import save_as_vw
 
 from coba.environments import Environments
 from coba.learners     import VowpalEpsilonLearner
 from coba.experiments  import Experiment, ClassEnvironmentTask
 
-config  = {"processes": 8, "chunk_by":'source', 'maxchunksperchild': 0 }
+config  = {"processes": 128, "chunk_by":'source', 'maxtasksperchunk': 5, 'maxchunksperchild': 2 }
 epsilon = 0.1
 
 if __name__ == '__main__':
@@ -38,11 +39,12 @@ if __name__ == '__main__':
 
    description = "Full on 50 replicate run for the ICRL 2023 paper."
    #log         = None#"./study1/outcomes/neurips-2-cmt.log.gz"
-   log         = "./study1/outcomes/ICLR-2023-unbounded.log.gz"
+   log         = "./study1/outcomes/ICLR-2023-unbounded.log"
+
 
    #environments = Environments.from_template("./study1/experiments/sanity.json", n_shuffle=3, n_take=4000)
    environments = Environments.from_template("./study1/experiments/neurips.json")
    #environments = Environments.from_template("./study1/experiments/fixed.json", n_shuffle=1, n_take=4000)
 
    result = Experiment(environments, learners, description, environment_task=ClassEnvironmentTask(), evaluation_task=SlimOnlineOnPolicyEvalTask()).config(**config).evaluate(log)
-   result.filter_fin().plot_learners()
+   #result.filter_fin().plot_learners()
