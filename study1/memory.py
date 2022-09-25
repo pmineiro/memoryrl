@@ -299,6 +299,7 @@ class EMT:
             f"--power_t {0}",
             "--loss_function squared",
             f"-b {26}",
+            "--initial_weight 0",
             *[ f"--interactions {i}" for i in interactions ]
         ]
 
@@ -338,7 +339,7 @@ class CMT:
             f"--dream_repeats {dream_repeats}",
             f"--alpha {alpha}",
             f"--power_t {0}",
-            f"-b {26}",
+            f"-b {25}",
             *[ f"--interactions {i}" for i in interactions ]
         ]
 
