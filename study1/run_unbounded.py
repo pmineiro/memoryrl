@@ -6,7 +6,7 @@ from coba.environments import Environments
 from coba.learners     import VowpalEpsilonLearner
 from coba.experiments  import Experiment, ClassEnvironmentTask
 
-config  = {"processes": 8, "chunk_by":'task', 'maxtasksperchunk': None, 'maxchunksperchild': 1 }
+config  = {"processes": 8, "chunk_by":'task', 'maxtasksperchunk': None, 'maxchunksperchild': 2 }
 epsilon = 0.1
 
 if __name__ == '__main__':
@@ -19,7 +19,7 @@ if __name__ == '__main__':
       EpisodicLearner     (epsilon, EMT(split=100, scorer=3, router=2, bound=-1,                       interactions=['xa'])),
       
       # #EMT-CB (not self-consistent)
-      EpisodicLearner     (epsilon, EMT(split=100, scorer=4, router=2, bound=-1,                       interactions=['xa'])),
+      EpisodicLearner     (epsilon, EMT(split=50, scorer=4, router=2, bound=-1,                       interactions=[])),
       
       # #CMT-CB
       EpisodicLearner     (epsilon, CMT(n_nodes=2000, leaf_multiplier=9 , dream_repeats=10, alpha=0.50, interactions=['xa'])),
@@ -37,12 +37,14 @@ if __name__ == '__main__':
    ]
 
    description = "Full on 50 replicate run for the ICRL 2023 paper."
-   #log         = None#"./study1/outcomes/neurips-2-cmt.log.gz"
-   log         = "./study1/outcomes/ICLR-2023-unbounded.log"
+   log         = None#"./study1/outcomes/neurips-2-cmt.log.gz"
+   log         = "./study1/outcomes/ICLR-2023-unbounded.log.gz"
 
    #environments = Environments.from_template("./study1/experiments/sanity.json", n_shuffle=1, n_take=4000)
    environments = Environments.from_template("./study1/experiments/neurips.json")
    #environments = Environments.from_template("./study1/experiments/fixed.json", n_shuffle=1, n_take=4000)
+
+   environments = sorted(environments, key=lambda e: (e.params['shuffle'],e.params['openml_task']))
 
    result = Experiment(environments, learners, description, environment_task=ClassEnvironmentTask(), evaluation_task=SlimOnlineOnPolicyEvalTask()).config(**config).evaluate(log)
    result.filter_fin().plot_learners()
